@@ -1,8 +1,9 @@
 import { Hardware } from "keysender";
 
 export class AutoPlayService {
-	constructor(configService) {
+	constructor(configService, vncTcpService = null) {
 		this.configService = configService;
+		this.vncTcpService = vncTcpService;
 		this.mainWindow = null;
 		this.state = {
 			isPlaying: false,
@@ -63,6 +64,11 @@ export class AutoPlayService {
 
 	_sleep(ms) {
 		return new Promise((resolve) => setTimeout(resolve, ms));
+	}
+
+	_toggleOutputKey(ks, key, type) {
+		ks.toggleKey(key, type);
+		this.vncTcpService?.sendKey(key, type);
 	}
 
 	_createSongClock(startSongTime) {
@@ -203,7 +209,7 @@ export class AutoPlayService {
 				const ok = await this._waitForSongTime(clock, ev.songTime, sessionId);
 				if (!ok) return;
 
-				ks.toggleKey(ev.key, ev.type);
+				this._toggleOutputKey(ks, ev.key, ev.type);
 				if (ev.type) activeKeys.add(ev.key);
 				else activeKeys.delete(ev.key);
 			}
@@ -211,7 +217,7 @@ export class AutoPlayService {
 			await this._sleep(50);
 
 		} finally {
-			activeKeys.forEach(key => ks.toggleKey(key, false));
+			activeKeys.forEach(key => this._toggleOutputKey(ks, key, false));
 			activeKeys.clear();
 
 			this.state.isPlaying = false;

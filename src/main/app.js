@@ -9,6 +9,7 @@ import { WindowController } from "./controllers/windowController.js";
 import { ConfigService } from "./services/configService.js";
 import { AutoPlayService } from "./services/autoPlayService.js";
 import { UpdateService } from "./services/updateService.js";
+import { VncTcpService } from "./services/vncTcpService.js";
 import { registerIpcHandlers } from "./ipc/registerIpcHandlers.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -25,11 +26,12 @@ app.setAppUserModelId("Sky Auto Piano");
 app.setName("Sky Auto Piano");
 
 const configService = new ConfigService(appDirectory);
-const autoPlayService = new AutoPlayService(configService);
+const vncTcpService = new VncTcpService(configService);
+const autoPlayService = new AutoPlayService(configService, vncTcpService);
 const updateService = new UpdateService(appDirectory, configService);
 const windowController = new WindowController(appDirectory, configService, autoPlayService, updateService);
 
-registerIpcHandlers({ windowController, configService, autoPlayService, updateService });
+registerIpcHandlers({ windowController, configService, autoPlayService, updateService, vncTcpService });
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -62,5 +64,6 @@ app.on("window-all-closed", () => {
 });
 
 app.on("will-quit", () => {
+	vncTcpService.disconnect({ silent: true });
 	globalShortcut.unregisterAll();
 });

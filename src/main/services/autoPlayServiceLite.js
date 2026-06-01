@@ -1,8 +1,9 @@
 import { Hardware } from "keysender";
 
 export class AutoPlayService {
-	constructor(configService) {
+	constructor(configService, vncTcpService = null) {
 		this.configService = configService;
+		this.vncTcpService = vncTcpService;
 		this.mainWindow = null;
 		this.state = {
 			isPlaying: false,
@@ -20,6 +21,11 @@ export class AutoPlayService {
 
 	get keyboard() {
 		return this.configService.value.keyboard;
+	}
+
+	_sendOutputKey(ks, key, duration) {
+		ks.sendKeys(key, duration);
+		this.vncTcpService?.tapKey(key, duration);
 	}
 
 	stop({ emitStopEvent = true, manualStop = true } = {}) {
@@ -94,7 +100,8 @@ export class AutoPlayService {
 				if (config.keyboard.customKeyboard) {
 					key = config.keyboard.keys[keysID[key]];
 				}
-				ks.sendKeys(
+				this._sendOutputKey(
+					ks,
 					key,
 					longPressMode ? (longPressDuration ? longPressDuration : delay) - 35 : undefined,
 				);
@@ -110,7 +117,8 @@ export class AutoPlayService {
 				if (this.keyboard.customKeyboard) {
 					outputKey = this.keyboard.keys[keysID[key]];
 				}
-				ks.sendKeys(
+				this._sendOutputKey(
+					ks,
 					outputKey,
 					this.panel.longPressMode ? this.panel.delayNext * 1000 - 35 : undefined,
 				);

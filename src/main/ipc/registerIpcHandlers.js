@@ -9,9 +9,19 @@ import { ipcMain, dialog } from "electron/main";
  * @param {import("../services/configService.js").ConfigService} deps.configService
  * @param {import("../services/autoPlayService.js").AutoPlayService} deps.autoPlayService
  * @param {import("../services/updateService.js").UpdateService} deps.updateService
+ * @param {import("../services/vncTcpService.js").VncTcpService} deps.vncTcpService
  */
-export function registerIpcHandlers({ windowController, configService, autoPlayService, updateService }) {
+export function registerIpcHandlers({ windowController, configService, autoPlayService, updateService, vncTcpService }) {
 	const appDirectory = windowController.appDirectory;
+	const broadcastVncTcpState = (state) => {
+		for (const win of [windowController.mainWindow, windowController.settingsWindow, windowController.editorWindow]) {
+			if (win && !win.isDestroyed()) {
+				win.webContents.send("vnc-tcp-state", state);
+			}
+		}
+	};
+
+	vncTcpService.on("state", broadcastVncTcpState);
 
 	ipcMain.on("changeSetting", () => {
 		const updatedConfig = configService.reloadFromDisk();
@@ -61,6 +71,20 @@ export function registerIpcHandlers({ windowController, configService, autoPlayS
 
 	ipcMain.on("openSheetEditor", (_, args) => {
 		windowController.openSheetEditor(args?.sheetIndex ?? 0);
+	});
+
+	ipcMain.handle("vnc-tcp-get-state", () => vncTcpService.getState());
+
+	ipcMain.handle("vnc-tcp-save-settings", (_, data) => {
+		return vncTcpService.updateSettings(data);
+	});
+
+	ipcMain.handle("vnc-tcp-connect", async (_, data) => {
+		return vncTcpService.connect(data);
+	});
+
+	ipcMain.handle("vnc-tcp-disconnect", () => {
+		return vncTcpService.disconnect();
 	});
 
 	ipcMain.on("check-update", async (event) => {

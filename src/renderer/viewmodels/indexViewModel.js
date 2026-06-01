@@ -172,6 +172,12 @@ document.addEventListener("DOMContentLoaded", () => {
    * @param {string} tabType - The type of tab selected
    */
   function filterContentByTab(tabType) {
+    const isTcpTab = tabType === 'tcp';
+    setTcpPanelVisible(isTcpTab);
+    if (isTcpTab) {
+      return;
+    }
+
     const cards = document.querySelectorAll('.card');
     const searchTerm = document.getElementById('search-bar').value.toLowerCase().trim();
     
@@ -269,6 +275,12 @@ document.addEventListener("DOMContentLoaded", () => {
  * @param {string} tabType - The type of tab selected
  */
 function filterContentByTab(tabType) {
+  const isTcpTab = tabType === 'tcp';
+  setTcpPanelVisible(isTcpTab);
+  if (isTcpTab) {
+    return;
+  }
+
   const cards = document.querySelectorAll('.card');
   const searchTerm = document.getElementById('search-bar').value.toLowerCase().trim();
   const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
@@ -336,6 +348,18 @@ ipcRenderer.on("config-updated", (_, updatedConfig) => {
 // Configure search functionality
 const searchBar = document.getElementById("search-bar");
 const contentContainer = document.querySelector(".content");
+const searchContainer = document.querySelector(".search-container");
+const addSheetButton = document.querySelector("body > .btn-add");
+const tcpPanel = document.getElementById("tcp-panel");
+const tcpHostInput = document.getElementById("tcp-host");
+const tcpPortInput = document.getElementById("tcp-port");
+const tcpStartButton = document.getElementById("tcp-start");
+const tcpStopButton = document.getElementById("tcp-stop");
+const tcpStatusBadge = document.getElementById("tcp-status");
+const tcpDesktopInfo = document.getElementById("tcp-desktop");
+const tcpServerInfo = document.getElementById("tcp-server");
+const tcpMessage = document.getElementById("tcp-message");
+let vncTcpState = null;
 
 if (searchBar && contentContainer) {
   searchBar.addEventListener("input", () => {
@@ -348,6 +372,166 @@ if (searchBar && contentContainer) {
   });
 } else {
   console.error("Search bar or content container element not found!");
+}
+
+setupVncTcpControls();
+
+function setTcpPanelVisible(isVisible) {
+  if (tcpPanel) {
+    tcpPanel.hidden = !isVisible;
+  }
+  if (contentContainer) {
+    contentContainer.style.display = isVisible ? "none" : "";
+  }
+  if (searchContainer) {
+    searchContainer.style.display = isVisible ? "none" : "";
+  }
+  if (addSheetButton) {
+    addSheetButton.style.display = isVisible ? "none" : "";
+  }
+}
+
+function getTcpSettingsFromForm() {
+  const rawHost = tcpHostInput?.value?.trim() || "192.168.1.6";
+  const rawPort = Number(tcpPortInput?.value || 5901);
+  const port = Number.isInteger(rawPort) && rawPort > 0 && rawPort <= 65535 ? rawPort : 5901;
+
+  if (tcpPortInput) {
+    tcpPortInput.value = port;
+  }
+
+  return {
+    host: rawHost,
+    port,
+  };
+}
+
+function renderVncTcpState(state = {}) {
+  vncTcpState = state;
+  const status = state.status || "disconnected";
+  const statusText = {
+    connected: "Connected",
+    connecting: "Connecting",
+    disconnected: "Disconnected",
+    error: "Error",
+  }[status] || "Disconnected";
+
+  if (tcpHostInput && state.host && document.activeElement !== tcpHostInput) {
+    tcpHostInput.value = state.host;
+  }
+  if (tcpPortInput && state.port && document.activeElement !== tcpPortInput) {
+    tcpPortInput.value = state.port;
+  }
+  if (tcpStatusBadge) {
+    tcpStatusBadge.className = `tcp-status ${status}`;
+    tcpStatusBadge.textContent = statusText;
+  }
+  if (tcpDesktopInfo) {
+    tcpDesktopInfo.textContent = state.desktopName
+      ? `Desktop: ${state.desktopName} (${state.width || 0}x${state.height || 0})`
+      : "Desktop: -";
+  }
+  if (tcpServerInfo) {
+    tcpServerInfo.textContent = state.serverVersion ? `Server: ${state.serverVersion}` : "Server: -";
+  }
+  if (tcpMessage) {
+    tcpMessage.textContent = state.message || "";
+  }
+  if (tcpStartButton) {
+    tcpStartButton.disabled = status === "connecting" || status === "connected";
+  }
+  if (tcpStopButton) {
+    tcpStopButton.disabled = status === "disconnected";
+  }
+  if (tcpHostInput) {
+    tcpHostInput.disabled = status === "connecting" || status === "connected";
+  }
+  if (tcpPortInput) {
+    tcpPortInput.disabled = status === "connecting" || status === "connected";
+  }
+}
+
+async function saveVncTcpSettings(enabled = vncTcpState?.enabled === true) {
+  const state = await ipcRenderer.invoke("vnc-tcp-save-settings", {
+    ...getTcpSettingsFromForm(),
+    enabled,
+  });
+  renderVncTcpState(state);
+  return state;
+}
+
+function setupVncTcpControls() {
+  if (!tcpPanel || !tcpStartButton || !tcpStopButton) {
+    return;
+  }
+
+  ipcRenderer.invoke("vnc-tcp-get-state")
+    .then(renderVncTcpState)
+    .catch((error) => {
+      renderVncTcpState({
+        status: "error",
+        message: error.message,
+      });
+    });
+
+  ipcRenderer.on("vnc-tcp-state", (_, state) => {
+    renderVncTcpState(state);
+  });
+
+  tcpStartButton.addEventListener("click", async () => {
+    try {
+      renderVncTcpState({
+        ...vncTcpState,
+        ...getTcpSettingsFromForm(),
+        status: "connecting",
+        message: "Connecting...",
+      });
+
+      const state = await ipcRenderer.invoke("vnc-tcp-connect", getTcpSettingsFromForm());
+      renderVncTcpState(state);
+
+      notie.alert({
+        type: state.status === "connected" ? 1 : 3,
+        text: state.message || "TCP connection failed.",
+      });
+    } catch (error) {
+      renderVncTcpState({
+        ...vncTcpState,
+        status: "error",
+        message: error.message,
+      });
+      notie.alert({
+        type: 3,
+        text: error.message,
+      });
+    }
+  });
+
+  tcpStopButton.addEventListener("click", async () => {
+    try {
+      await ipcRenderer.invoke("vnc-tcp-disconnect");
+      const state = await saveVncTcpSettings(false);
+      renderVncTcpState(state);
+    } catch (error) {
+      renderVncTcpState({
+        ...vncTcpState,
+        status: "error",
+        message: error.message,
+      });
+    }
+  });
+
+  for (const input of [tcpHostInput, tcpPortInput]) {
+    input?.addEventListener("change", () => {
+      saveVncTcpSettings(vncTcpState?.enabled === true).catch((error) => {
+        renderVncTcpState({
+          ...vncTcpState,
+          status: "error",
+          message: error.message,
+        });
+      });
+    });
+  }
 }
 
 // -------------------------------------

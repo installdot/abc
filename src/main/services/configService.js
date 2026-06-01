@@ -36,6 +36,11 @@ export class ConfigService {
 			update: {
 				blockUpdate: false,
 			},
+			vncTcp: {
+				host: "192.168.1.6",
+				port: 5901,
+				enabled: false,
+			},
 			appTheme: "dark",
 		};
 
@@ -127,6 +132,14 @@ export class ConfigService {
 	updateKeyboard(partial) {
 		this.config.keyboard = {
 			...this.config.keyboard,
+			...partial,
+		};
+		this.save();
+	}
+
+	updateVncTcp(partial) {
+		this.config.vncTcp = {
+			...this.config.vncTcp,
 			...partial,
 		};
 		this.save();

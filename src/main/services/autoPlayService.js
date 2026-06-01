@@ -2,10 +2,10 @@ import { AutoPlayService as StrictAutoPlayService } from "./autoPlayServiceStric
 import { AutoPlayService as LiteAutoPlayService } from "./autoPlayServiceLite.js";
 
 export class AutoPlayService {
-	constructor(configService) {
+	constructor(configService, vncTcpService = null) {
 		this.configService = configService;
-		this.strictService = new StrictAutoPlayService(configService);
-		this.liteService = new LiteAutoPlayService(configService);
+		this.strictService = new StrictAutoPlayService(configService, vncTcpService);
+		this.liteService = new LiteAutoPlayService(configService, vncTcpService);
 		this.activeMode = this._getPlaybackMode();
 	}
 

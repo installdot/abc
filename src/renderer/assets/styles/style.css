@@ -827,6 +827,152 @@ body:not(.dark-mode) .nav-tab.active {
     box-shadow: 0 4px 15px rgba(59, 130, 246, 0.2);
 }
 
+/* -------------------------------------
+   TCP PANEL
+   ------------------------------------- */
+.tcp-panel {
+    margin: 0 20px 170px 20px;
+    padding: 18px;
+    background-color: var(--background-color);
+    color: var(--font-color);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    box-shadow: 0 0 1rem 0 rgba(0, 0, 0, 0.2);
+}
+
+.tcp-panel[hidden] {
+    display: none !important;
+}
+
+.tcp-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 18px;
+}
+
+.tcp-panel-header h2 {
+    margin: 0;
+    font-size: 22px;
+    line-height: 1.2;
+}
+
+.tcp-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 108px;
+    min-height: 28px;
+    padding: 0 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #ffffff;
+    background-color: #64748b;
+}
+
+.tcp-status.connected {
+    background-color: #16a34a;
+}
+
+.tcp-status.connecting {
+    background-color: #d97706;
+}
+
+.tcp-status.error {
+    background-color: #dc2626;
+}
+
+.tcp-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 150px;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.tcp-field {
+    display: grid;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.tcp-field input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 8px;
+    outline: none;
+    background-color: rgba(255, 255, 255, 0.08);
+    color: var(--font-color);
+}
+
+.tcp-field input:focus {
+    border-color: var(--hover-color);
+    box-shadow: 0 0 0 2px rgba(59, 131, 246, 0.2);
+}
+
+.tcp-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.tcp-action {
+    width: auto;
+    min-width: 132px;
+    border-radius: 8px;
+    gap: 8px;
+}
+
+.tcp-action.secondary {
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
+.tcp-action.secondary:hover {
+    border-color: #dc2626;
+    color: #dc2626;
+}
+
+.tcp-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+    font-size: 13px;
+}
+
+.tcp-meta span,
+.tcp-message {
+    min-height: 20px;
+    padding: 9px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.06);
+    overflow-wrap: anywhere;
+}
+
+.tcp-message {
+    font-size: 13px;
+}
+
+body:not(.dark-mode) .tcp-panel {
+    border-color: #e5e7eb;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+}
+
+body:not(.dark-mode) .tcp-field input,
+body:not(.dark-mode) .tcp-meta span,
+body:not(.dark-mode) .tcp-message {
+    border-color: #cbd5e1;
+    background-color: #f8fafc;
+    color: #0f172a;
+}
+
 /* Responsive design for navigation */
 @media (max-width: 600px) {
     .nav-container {
@@ -847,6 +993,24 @@ body:not(.dark-mode) .nav-tab.active {
     .nav-icon {
         width: 14px;
         height: 14px;
+    }
+
+    .tcp-panel {
+        margin: 0 15px 170px 15px;
+    }
+
+    .tcp-form,
+    .tcp-meta {
+        grid-template-columns: 1fr;
+    }
+
+    .tcp-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .tcp-action {
+        width: 100%;
     }
 }
 
