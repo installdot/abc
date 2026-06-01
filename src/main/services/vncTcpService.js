@@ -179,6 +179,7 @@ export class VncTcpService extends EventEmitter {
 		});
 		this.configService.updateVncTcp(next);
 		this.disconnect({ silent: true });
+		this.#log(`Connecting to ${next.host}:${next.port}`);
 
 		const socket = new net.Socket();
 		socket.setNoDelay(true);
@@ -251,6 +252,12 @@ export class VncTcpService extends EventEmitter {
 					: `Connected to ${next.host}:${next.port}`,
 				...desktop,
 			});
+			this.#log(
+				desktop.desktopName
+					? `Connected: ${desktop.desktopName} (${desktop.width}x${desktop.height})`
+					: `Connected to ${next.host}:${next.port}`,
+				"success",
+			);
 		} catch (error) {
 			if (this.socket === socket) {
 				this.socket = null;
@@ -264,12 +271,14 @@ export class VncTcpService extends EventEmitter {
 				host: next.host,
 				port: next.port,
 			});
+			this.#log(`Connection failed: ${error.message}`, "error");
 		}
 
 		return this.getState();
 	}
 
 	disconnect({ silent = false } = {}) {
+		const wasConnected = this.isConnected;
 		for (const timer of this.releaseTimers) {
 			clearTimeout(timer);
 		}
@@ -290,6 +299,7 @@ export class VncTcpService extends EventEmitter {
 				status: "disconnected",
 				message: "Disconnected",
 			});
+			this.#log(wasConnected ? "Disconnected" : "TCP stopped");
 		}
 
 		return this.getState();
@@ -314,7 +324,12 @@ export class VncTcpService extends EventEmitter {
 			return false;
 		}
 
-		return this.#writeKeyEvent(keysym, down);
+		const sent = this.#writeKeyEvent(keysym, down);
+		if (sent) {
+			this.#log(`${down ? "down" : "up"} ${key}`);
+		}
+
+		return sent;
 	}
 
 	tapKey(key, durationMs = 25) {
@@ -469,5 +484,13 @@ export class VncTcpService extends EventEmitter {
 			...partial,
 		};
 		this.emit("state", this.getState());
+	}
+
+	#log(message, level = "info") {
+		this.emit("log", {
+			level,
+			message,
+			timestamp: new Date().toISOString(),
+		});
 	}
 }

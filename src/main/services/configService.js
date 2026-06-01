@@ -15,7 +15,8 @@ export class ConfigService {
 				speed: 1,
 				delayNext: 1,
 				autoSave: true,
-				minimizeOnPlay: true,
+				minimizeOnPlay: false,
+				minimizeOnPlayMigrated: true,
 				playbackMode: "lite",
 			},
 			keyboard: {
@@ -50,6 +51,9 @@ export class ConfigService {
 
 	#getUpdatedConfig(currentConfig) {
 		let updated = false;
+		const needsMinimizeOnPlayMigration =
+			currentConfig.panel &&
+			!("minimizeOnPlayMigrated" in currentConfig.panel);
 
 		const walk = (current, defaults) => {
 			Object.keys(defaults).forEach((key) => {
@@ -67,6 +71,11 @@ export class ConfigService {
 		};
 
 		walk(currentConfig, this.defaultConfig);
+		if (needsMinimizeOnPlayMigration) {
+			currentConfig.panel.minimizeOnPlay = false;
+			currentConfig.panel.minimizeOnPlayMigrated = true;
+			updated = true;
+		}
 		return { updated, config: currentConfig };
 	}
 

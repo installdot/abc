@@ -960,6 +960,62 @@ body:not(.dark-mode) .nav-tab.active {
     font-size: 13px;
 }
 
+.tcp-log-panel {
+    display: grid;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.tcp-log-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+#tcp-clear-log {
+    min-width: 64px;
+    min-height: 28px;
+    padding: 0 10px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--font-color);
+    cursor: pointer;
+}
+
+#tcp-clear-log:hover {
+    border-color: var(--hover-color);
+    color: var(--hover-color);
+}
+
+.tcp-log {
+    height: 150px;
+    padding: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    background-color: rgba(0, 0, 0, 0.22);
+    overflow-y: auto;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.tcp-log-line {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.tcp-log-line.error {
+    color: #f87171;
+}
+
+.tcp-log-line.success {
+    color: #4ade80;
+}
+
 body:not(.dark-mode) .tcp-panel {
     border-color: #e5e7eb;
     box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
@@ -971,6 +1027,17 @@ body:not(.dark-mode) .tcp-message {
     border-color: #cbd5e1;
     background-color: #f8fafc;
     color: #0f172a;
+}
+
+body:not(.dark-mode) #tcp-clear-log {
+    border-color: #cbd5e1;
+    color: #0f172a;
+}
+
+body:not(.dark-mode) .tcp-log {
+    border-color: #cbd5e1;
+    background-color: #0f172a;
+    color: #e2e8f0;
 }
 
 /* Responsive design for navigation */

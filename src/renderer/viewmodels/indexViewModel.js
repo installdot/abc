@@ -359,7 +359,12 @@ const tcpStatusBadge = document.getElementById("tcp-status");
 const tcpDesktopInfo = document.getElementById("tcp-desktop");
 const tcpServerInfo = document.getElementById("tcp-server");
 const tcpMessage = document.getElementById("tcp-message");
+const tcpLog = document.getElementById("tcp-log");
+const tcpClearLogButton = document.getElementById("tcp-clear-log");
 let vncTcpState = null;
+let tcpLastStateSignature = "";
+const tcpLogEntries = [];
+const maxTcpLogEntries = 120;
 
 if (searchBar && contentContainer) {
   searchBar.addEventListener("input", () => {
@@ -449,15 +454,55 @@ function renderVncTcpState(state = {}) {
   if (tcpPortInput) {
     tcpPortInput.disabled = status === "connecting" || status === "connected";
   }
+
+  const signature = `${status}|${state.message || ""}|${state.desktopName || ""}`;
+  if (signature !== tcpLastStateSignature) {
+    tcpLastStateSignature = signature;
+    appendTcpLog(state.message || statusText, status === "error" ? "error" : status === "connected" ? "success" : "info");
+  }
 }
 
 async function saveVncTcpSettings(enabled = vncTcpState?.enabled === true) {
+  const settings = getTcpSettingsFromForm();
+  appendTcpLog(`Saving TCP settings (${settings.host}:${settings.port})`);
   const state = await ipcRenderer.invoke("vnc-tcp-save-settings", {
-    ...getTcpSettingsFromForm(),
+    ...settings,
     enabled,
   });
   renderVncTcpState(state);
   return state;
+}
+
+function appendTcpLog(message, level = "info", timestamp = new Date()) {
+  if (!tcpLog || !message) {
+    return;
+  }
+
+  const time = timestamp instanceof Date
+    ? timestamp
+    : new Date(timestamp);
+  const displayTime = Number.isNaN(time.getTime())
+    ? new Date().toLocaleTimeString()
+    : time.toLocaleTimeString();
+  const entry = {
+    level,
+    text: `[${displayTime}] ${message}`,
+  };
+
+  tcpLogEntries.push(entry);
+  while (tcpLogEntries.length > maxTcpLogEntries) {
+    tcpLogEntries.shift();
+  }
+
+  tcpLog.innerHTML = "";
+  for (const line of tcpLogEntries) {
+    const element = document.createElement("div");
+    element.className = `tcp-log-line ${line.level}`;
+    element.textContent = line.text;
+    tcpLog.appendChild(element);
+  }
+  tcpLog.scrollTop = tcpLog.scrollHeight;
+  console.log(`[VNC TCP] ${message}`);
 }
 
 function setupVncTcpControls() {
@@ -478,16 +523,30 @@ function setupVncTcpControls() {
     renderVncTcpState(state);
   });
 
+  ipcRenderer.on("vnc-tcp-log", (_, entry) => {
+    appendTcpLog(entry.message, entry.level, entry.timestamp);
+  });
+
+  tcpClearLogButton?.addEventListener("click", () => {
+    tcpLogEntries.length = 0;
+    if (tcpLog) {
+      tcpLog.innerHTML = "";
+    }
+    appendTcpLog("Console cleared");
+  });
+
   tcpStartButton.addEventListener("click", async () => {
     try {
+      const settings = getTcpSettingsFromForm();
+      appendTcpLog(`Start TCP pressed (${settings.host}:${settings.port})`);
       renderVncTcpState({
         ...vncTcpState,
-        ...getTcpSettingsFromForm(),
+        ...settings,
         status: "connecting",
         message: "Connecting...",
       });
 
-      const state = await ipcRenderer.invoke("vnc-tcp-connect", getTcpSettingsFromForm());
+      const state = await ipcRenderer.invoke("vnc-tcp-connect", settings);
       renderVncTcpState(state);
 
       notie.alert({
@@ -509,6 +568,7 @@ function setupVncTcpControls() {
 
   tcpStopButton.addEventListener("click", async () => {
     try {
+      appendTcpLog("Stop TCP pressed");
       await ipcRenderer.invoke("vnc-tcp-disconnect");
       const state = await saveVncTcpSettings(false);
       renderVncTcpState(state);

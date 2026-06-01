@@ -20,8 +20,16 @@ export function registerIpcHandlers({ windowController, configService, autoPlayS
 			}
 		}
 	};
+	const broadcastVncTcpLog = (entry) => {
+		for (const win of [windowController.mainWindow, windowController.settingsWindow, windowController.editorWindow]) {
+			if (win && !win.isDestroyed()) {
+				win.webContents.send("vnc-tcp-log", entry);
+			}
+		}
+	};
 
 	vncTcpService.on("state", broadcastVncTcpState);
+	vncTcpService.on("log", broadcastVncTcpLog);
 
 	ipcMain.on("changeSetting", () => {
 		const updatedConfig = configService.reloadFromDisk();
