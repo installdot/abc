@@ -143,6 +143,10 @@ export class VncTcpService extends EventEmitter {
 		return this.state.status === "connected" && this.socket && !this.socket.destroyed;
 	}
 
+	shouldUseTcpOutput() {
+		return this.config.enabled === true;
+	}
+
 	getState() {
 		return {
 			...this.state,

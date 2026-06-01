@@ -67,8 +67,12 @@ export class AutoPlayService {
 	}
 
 	_toggleOutputKey(ks, key, type) {
+		if (this.vncTcpService?.shouldUseTcpOutput()) {
+			this.vncTcpService.sendKey(key, type);
+			return;
+		}
+
 		ks.toggleKey(key, type);
-		this.vncTcpService?.sendKey(key, type);
 	}
 
 	_createSongClock(startSongTime) {

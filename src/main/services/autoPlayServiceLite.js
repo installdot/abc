@@ -24,8 +24,12 @@ export class AutoPlayService {
 	}
 
 	_sendOutputKey(ks, key, duration) {
+		if (this.vncTcpService?.shouldUseTcpOutput()) {
+			this.vncTcpService.tapKey(key, duration);
+			return;
+		}
+
 		ks.sendKeys(key, duration);
-		this.vncTcpService?.tapKey(key, duration);
 	}
 
 	stop({ emitStopEvent = true, manualStop = true } = {}) {

@@ -11,9 +11,10 @@ jest.unstable_mockModule("keysender", () => ({
 	Hardware: jest.fn(() => ({ keyboard })),
 }));
 
-const { AutoPlayService } = await import("../src/main/services/autoPlayServiceStrict.js");
+const { AutoPlayService: StrictAutoPlayService } = await import("../src/main/services/autoPlayServiceStrict.js");
+const { AutoPlayService: LiteAutoPlayService } = await import("../src/main/services/autoPlayServiceLite.js");
 
-function createService(panelOverrides = {}, keyboardOverrides = {}) {
+function createService(panelOverrides = {}, keyboardOverrides = {}, vncTcpService = null) {
 	const configService = {
 		value: {
 			panel: {
@@ -30,11 +31,29 @@ function createService(panelOverrides = {}, keyboardOverrides = {}) {
 		},
 	};
 
-	const service = new AutoPlayService(configService);
+	const service = new StrictAutoPlayService(configService, vncTcpService);
 	service._sleep = (ms) =>
 		new Promise((resolve) => setTimeout(resolve, Math.max(1, Math.ceil(ms))));
 
 	return service;
+}
+
+function createLiteService(vncTcpService = null) {
+	const configService = {
+		value: {
+			panel: {
+				speed: 1,
+				delayNext: 0,
+				longPressMode: false,
+			},
+			keyboard: {
+				customKeyboard: false,
+				keys: [],
+			},
+		},
+	};
+
+	return new LiteAutoPlayService(configService, vncTcpService);
 }
 
 function expectEventTimes(actual, expected, toleranceMs = 1) {
@@ -191,5 +210,43 @@ describe("AutoPlayService timeline", () => {
 			],
 			20
 		);
+	});
+
+	it("routes strict playback only through VNC TCP when TCP output is enabled", async () => {
+		const vncTcpService = {
+			shouldUseTcpOutput: jest.fn(() => true),
+			sendKey: jest.fn(),
+		};
+		const service = createService({}, {}, vncTcpService);
+		service.state.isPlaying = true;
+		service.state.sessionId = "s1";
+
+		const keyMap = {
+			1000: ["y"],
+		};
+
+		const playPromise = service._autoPlay(keyMap, "s1", 0);
+		await jest.runAllTimersAsync();
+		await playPromise;
+
+		expect(keyboard.toggleKey).not.toHaveBeenCalled();
+		expect(vncTcpService.sendKey).toHaveBeenCalledWith("y", true);
+		expect(vncTcpService.sendKey).toHaveBeenCalledWith("y", false);
+	});
+
+	it("routes lite playback only through VNC TCP when TCP output is enabled", () => {
+		const vncTcpService = {
+			shouldUseTcpOutput: jest.fn(() => true),
+			tapKey: jest.fn(),
+		};
+		const service = createLiteService(vncTcpService);
+		const localKeyboard = {
+			sendKeys: jest.fn(),
+		};
+
+		service._sendOutputKey(localKeyboard, "y", 25);
+
+		expect(localKeyboard.sendKeys).not.toHaveBeenCalled();
+		expect(vncTcpService.tapKey).toHaveBeenCalledWith("y", 25);
 	});
 });
