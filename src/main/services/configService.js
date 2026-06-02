@@ -41,6 +41,7 @@ export class ConfigService {
 				host: "192.168.1.6",
 				port: 5901,
 				enabled: false,
+				tapDelayMs: 12,
 			},
 			appTheme: "dark",
 		};

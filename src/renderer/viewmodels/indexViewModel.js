@@ -353,6 +353,7 @@ const addSheetButton = document.querySelector("body > .btn-add");
 const tcpPanel = document.getElementById("tcp-panel");
 const tcpHostInput = document.getElementById("tcp-host");
 const tcpPortInput = document.getElementById("tcp-port");
+const tcpTapDelayInput = document.getElementById("tcp-tap-delay");
 const tcpStartButton = document.getElementById("tcp-start");
 const tcpStopButton = document.getElementById("tcp-stop");
 const tcpStatusBadge = document.getElementById("tcp-status");
@@ -400,14 +401,22 @@ function getTcpSettingsFromForm() {
   const rawHost = tcpHostInput?.value?.trim() || "192.168.1.6";
   const rawPort = Number(tcpPortInput?.value || 5901);
   const port = Number.isInteger(rawPort) && rawPort > 0 && rawPort <= 65535 ? rawPort : 5901;
+  const rawTapDelayMs = Number(tcpTapDelayInput?.value || vncTcpState?.tapDelayMs || 12);
+  const tapDelayMs = Number.isFinite(rawTapDelayMs)
+    ? Math.min(100, Math.max(1, Math.round(rawTapDelayMs)))
+    : 12;
 
   if (tcpPortInput) {
     tcpPortInput.value = port;
+  }
+  if (tcpTapDelayInput) {
+    tcpTapDelayInput.value = tapDelayMs;
   }
 
   return {
     host: rawHost,
     port,
+    tapDelayMs,
   };
 }
 
@@ -426,6 +435,9 @@ function renderVncTcpState(state = {}) {
   }
   if (tcpPortInput && state.port && document.activeElement !== tcpPortInput) {
     tcpPortInput.value = state.port;
+  }
+  if (tcpTapDelayInput && state.tapDelayMs && document.activeElement !== tcpTapDelayInput) {
+    tcpTapDelayInput.value = state.tapDelayMs;
   }
   if (tcpStatusBadge) {
     tcpStatusBadge.className = `tcp-status ${status}`;
@@ -454,6 +466,9 @@ function renderVncTcpState(state = {}) {
   if (tcpPortInput) {
     tcpPortInput.disabled = status === "connecting" || status === "connected";
   }
+  if (tcpTapDelayInput) {
+    tcpTapDelayInput.disabled = status === "connecting";
+  }
 
   const signature = `${status}|${state.message || ""}|${state.desktopName || ""}`;
   if (signature !== tcpLastStateSignature) {
@@ -464,7 +479,7 @@ function renderVncTcpState(state = {}) {
 
 async function saveVncTcpSettings(enabled = vncTcpState?.enabled === true) {
   const settings = getTcpSettingsFromForm();
-  appendTcpLog(`Saving TCP settings (${settings.host}:${settings.port})`);
+  appendTcpLog(`Saving TCP settings (${settings.host}:${settings.port}, tap ${settings.tapDelayMs}ms)`);
   const state = await ipcRenderer.invoke("vnc-tcp-save-settings", {
     ...settings,
     enabled,
@@ -538,7 +553,7 @@ function setupVncTcpControls() {
   tcpStartButton.addEventListener("click", async () => {
     try {
       const settings = getTcpSettingsFromForm();
-      appendTcpLog(`Start TCP pressed (${settings.host}:${settings.port})`);
+      appendTcpLog(`Start TCP pressed (${settings.host}:${settings.port}, tap ${settings.tapDelayMs}ms)`);
       renderVncTcpState({
         ...vncTcpState,
         ...settings,
@@ -581,7 +596,7 @@ function setupVncTcpControls() {
     }
   });
 
-  for (const input of [tcpHostInput, tcpPortInput]) {
+  for (const input of [tcpHostInput, tcpPortInput, tcpTapDelayInput]) {
     input?.addEventListener("change", () => {
       saveVncTcpSettings(vncTcpState?.enabled === true).catch((error) => {
         renderVncTcpState({

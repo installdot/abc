@@ -4,6 +4,9 @@ import { EventEmitter } from "node:events";
 const DEFAULT_HOST = "192.168.1.6";
 const DEFAULT_PORT = 5901;
 const DEFAULT_TIMEOUT_MS = 10000;
+const DEFAULT_TAP_DELAY_MS = 12;
+const MIN_TAP_DELAY_MS = 1;
+const MAX_TAP_DELAY_MS = 100;
 const RFB_VERSION = "RFB 003.008\n";
 
 const SPECIAL_KEYSYM = new Map([
@@ -75,11 +78,15 @@ const SPECIAL_KEYSYM = new Map([
 export function normalizeVncTcpConfig(input = {}) {
 	const host = String(input.host ?? DEFAULT_HOST).trim() || DEFAULT_HOST;
 	const port = Number(input.port ?? DEFAULT_PORT);
+	const tapDelayMs = Number(input.tapDelayMs ?? DEFAULT_TAP_DELAY_MS);
 
 	return {
 		host,
 		port: Number.isInteger(port) && port > 0 && port <= 65535 ? port : DEFAULT_PORT,
 		enabled: input.enabled === true,
+		tapDelayMs: Number.isFinite(tapDelayMs)
+			? Math.min(MAX_TAP_DELAY_MS, Math.max(MIN_TAP_DELAY_MS, Math.round(tapDelayMs)))
+			: DEFAULT_TAP_DELAY_MS,
 	};
 }
 
@@ -124,12 +131,16 @@ export class VncTcpService extends EventEmitter {
 		this.socket = null;
 		this.buffer = Buffer.alloc(0);
 		this.pendingReads = [];
+		this.tapTimers = new Set();
+		this.tapQueues = new Map();
+		this.tapGeneration = 0;
 		this.activeKeysyms = new Set();
 		this.state = {
 			status: "disconnected",
 			message: "Disconnected",
 			host: this.config.host,
 			port: this.config.port,
+			tapDelayMs: this.config.tapDelayMs,
 			desktopName: "",
 			width: 0,
 			height: 0,
@@ -154,6 +165,7 @@ export class VncTcpService extends EventEmitter {
 		return {
 			...this.state,
 			enabled: this.config.enabled,
+			tapDelayMs: this.config.tapDelayMs,
 		};
 	}
 
@@ -164,13 +176,16 @@ export class VncTcpService extends EventEmitter {
 		});
 		this.configService.updateVncTcp(next);
 
+		const statePatch = {
+			tapDelayMs: next.tapDelayMs,
+		};
+
 		if (!this.isConnected) {
-			this.#setState({
-				host: next.host,
-				port: next.port,
-			});
+			statePatch.host = next.host;
+			statePatch.port = next.port;
 		}
 
+		this.#setState(statePatch);
 		return this.getState();
 	}
 
@@ -212,6 +227,7 @@ export class VncTcpService extends EventEmitter {
 
 			this.#rejectPending(new Error("Connection closed"));
 			this.socket = null;
+			this.#cancelTapQueues();
 			this.activeKeysyms.clear();
 			if (this.state.status !== "error") {
 				this.#setState({
@@ -229,6 +245,7 @@ export class VncTcpService extends EventEmitter {
 			message: `Connecting to ${next.host}:${next.port}...`,
 			host: next.host,
 			port: next.port,
+			tapDelayMs: next.tapDelayMs,
 			desktopName: "",
 			width: 0,
 			height: 0,
@@ -267,6 +284,7 @@ export class VncTcpService extends EventEmitter {
 			}
 			socket.destroy();
 			this.#rejectPending(error);
+			this.#cancelTapQueues();
 			this.activeKeysyms.clear();
 			this.#setState({
 				status: "error",
@@ -305,6 +323,7 @@ export class VncTcpService extends EventEmitter {
 	}
 
 	releaseAll() {
+		this.#cancelTapQueues();
 		if (!this.socket || this.socket.destroyed) {
 			this.activeKeysyms.clear();
 			return;
@@ -340,7 +359,8 @@ export class VncTcpService extends EventEmitter {
 			return false;
 		}
 
-		return this.#writeKeyTap(keysym);
+		this.#queueKeyTap(keysym);
+		return true;
 	}
 
 	#writeKeyEvent(keysym, down) {
@@ -358,17 +378,76 @@ export class VncTcpService extends EventEmitter {
 		return true;
 	}
 
-	#writeKeyTap(keysym) {
-		if (!this.socket || this.socket.destroyed) {
-			return false;
+	#queueKeyTap(keysym) {
+		const generation = this.tapGeneration;
+		let queue = this.tapQueues.get(keysym);
+		if (!queue) {
+			queue = {
+				generation,
+				pending: 0,
+				running: false,
+			};
+			this.tapQueues.set(keysym, queue);
 		}
 
-		this.socket.write(Buffer.concat([
-			createRfbKeyEvent(keysym, true),
-			createRfbKeyEvent(keysym, false),
-		]));
-		this.activeKeysyms.delete(keysym);
-		return true;
+		queue.pending += 1;
+		if (!queue.running) {
+			this.#drainTapQueue(keysym, queue);
+		}
+	}
+
+	#drainTapQueue(keysym, queue) {
+		if (queue.running) {
+			return;
+		}
+
+		queue.running = true;
+		const runNext = () => {
+			if (queue.generation !== this.tapGeneration || queue.pending <= 0) {
+				this.tapQueues.delete(keysym);
+				return;
+			}
+
+			queue.pending -= 1;
+			if (!this.#canWriteTap(queue.generation)) {
+				this.tapQueues.delete(keysym);
+				return;
+			}
+
+			this.#writeKeyEvent(keysym, true);
+			this.#setTapTimer(() => {
+				if (this.#canWriteTap(queue.generation)) {
+					this.#writeKeyEvent(keysym, false);
+				}
+				runNext();
+			}, this.config.tapDelayMs);
+		};
+
+		runNext();
+	}
+
+	#canWriteTap(generation) {
+		return generation === this.tapGeneration && this.isConnected;
+	}
+
+	#setTapTimer(callback, delayMs) {
+		const entry = {
+			timer: null,
+		};
+		entry.timer = setTimeout(() => {
+			this.tapTimers.delete(entry);
+			callback();
+		}, delayMs);
+		this.tapTimers.add(entry);
+	}
+
+	#cancelTapQueues() {
+		this.tapGeneration += 1;
+		for (const entry of this.tapTimers) {
+			clearTimeout(entry.timer);
+		}
+		this.tapTimers.clear();
+		this.tapQueues.clear();
 	}
 
 	#connectSocket(socket, host, port) {

@@ -8,6 +8,7 @@ function createConnectedService() {
 				host: "127.0.0.1",
 				port: 5901,
 				enabled: true,
+				tapDelayMs: 12,
 			},
 		},
 		updateVncTcp: jest.fn(),
@@ -47,12 +48,16 @@ describe("VncTcpService helpers", () => {
 			host: "10.0.0.5",
 			port: 5902,
 			enabled: true,
+			tapDelayMs: 12,
 		});
 		expect(normalizeVncTcpConfig({ host: "", port: "bad", enabled: "yes" })).toEqual({
 			host: "192.168.1.6",
 			port: 5901,
 			enabled: false,
+			tapDelayMs: 12,
 		});
+		expect(normalizeVncTcpConfig({ tapDelayMs: "300" }).tapDelayMs).toBe(100);
+		expect(normalizeVncTcpConfig({ tapDelayMs: "0" }).tapDelayMs).toBe(1);
 	});
 });
 
@@ -75,18 +80,48 @@ describe("VncTcpService key output", () => {
 		expect(log).not.toHaveBeenCalled();
 	});
 
-	it("sends one immediate tap packet for every repeated tap", () => {
-		const { service, socket } = createConnectedService();
-		const tapPacket = Buffer.concat([
-			createRfbKeyEvent(0x79, true),
-			createRfbKeyEvent(0x79, false),
-		]);
+	it("adds the configured delay between tap down and up packets", () => {
+		jest.useFakeTimers();
 
-		expect(service.tapKey("y", 25)).toBe(true);
-		expect(service.tapKey("y", 25)).toBe(true);
+		try {
+			const { service, socket } = createConnectedService();
 
-		expect(socket.write).toHaveBeenCalledTimes(2);
-		expect(socket.write).toHaveBeenNthCalledWith(1, tapPacket);
-		expect(socket.write).toHaveBeenNthCalledWith(2, tapPacket);
+			expect(service.tapKey("y", 25)).toBe(true);
+			expect(socket.write).toHaveBeenCalledTimes(1);
+			expect(socket.write).toHaveBeenNthCalledWith(1, createRfbKeyEvent(0x79, true));
+
+			jest.advanceTimersByTime(11);
+			expect(socket.write).toHaveBeenCalledTimes(1);
+
+			jest.advanceTimersByTime(1);
+			expect(socket.write).toHaveBeenCalledTimes(2);
+			expect(socket.write).toHaveBeenNthCalledWith(2, createRfbKeyEvent(0x79, false));
+		} finally {
+			jest.useRealTimers();
+		}
+	});
+
+	it("queues repeated same-key taps so every song click still plays", () => {
+		jest.useFakeTimers();
+
+		try {
+			const { service, socket } = createConnectedService();
+
+			expect(service.tapKey("y", 25)).toBe(true);
+			expect(service.tapKey("y", 25)).toBe(true);
+			expect(socket.write).toHaveBeenCalledTimes(1);
+			expect(socket.write).toHaveBeenNthCalledWith(1, createRfbKeyEvent(0x79, true));
+
+			jest.advanceTimersByTime(12);
+			expect(socket.write).toHaveBeenCalledTimes(3);
+			expect(socket.write).toHaveBeenNthCalledWith(2, createRfbKeyEvent(0x79, false));
+			expect(socket.write).toHaveBeenNthCalledWith(3, createRfbKeyEvent(0x79, true));
+
+			jest.advanceTimersByTime(12);
+			expect(socket.write).toHaveBeenCalledTimes(4);
+			expect(socket.write).toHaveBeenNthCalledWith(4, createRfbKeyEvent(0x79, false));
+		} finally {
+			jest.useRealTimers();
+		}
 	});
 });
