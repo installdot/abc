@@ -113,6 +113,10 @@ export function createRfbKeyEvent(keysym, down) {
 	return message;
 }
 
+export function createTcpWordPacket(word) {
+	return Buffer.from(String(word ?? ""), "utf8");
+}
+
 export class VncTcpService extends EventEmitter {
 	constructor(configService) {
 		super();
@@ -120,7 +124,6 @@ export class VncTcpService extends EventEmitter {
 		this.socket = null;
 		this.buffer = Buffer.alloc(0);
 		this.pendingReads = [];
-		this.releaseTimers = new Set();
 		this.activeKeysyms = new Set();
 		this.state = {
 			status: "disconnected",
@@ -279,10 +282,6 @@ export class VncTcpService extends EventEmitter {
 
 	disconnect({ silent = false } = {}) {
 		const wasConnected = this.isConnected;
-		for (const timer of this.releaseTimers) {
-			clearTimeout(timer);
-		}
-		this.releaseTimers.clear();
 
 		if (this.socket && !this.socket.destroyed) {
 			this.releaseAll();
@@ -306,9 +305,12 @@ export class VncTcpService extends EventEmitter {
 	}
 
 	releaseAll() {
-		if (!this.socket || this.socket.destroyed) return;
+		if (!this.socket || this.socket.destroyed) {
+			this.activeKeysyms.clear();
+			return;
+		}
 
-		for (const keysym of this.activeKeysyms) {
+		for (const keysym of [...this.activeKeysyms]) {
 			this.#writeKeyEvent(keysym, false);
 		}
 		this.activeKeysyms.clear();
@@ -324,27 +326,21 @@ export class VncTcpService extends EventEmitter {
 			return false;
 		}
 
-		const sent = this.#writeKeyEvent(keysym, down);
-		if (sent) {
-			this.#log(`${down ? "down" : "up"} ${key}`);
-		}
-
-		return sent;
+		const isDown = down === true;
+		return this.#writeKeyEvent(keysym, isDown);
 	}
 
-	tapKey(key, durationMs = 25) {
-		if (!this.sendKey(key, true)) {
+	tapKey(key) {
+		if (!this.config.enabled || !this.isConnected) {
 			return false;
 		}
 
-		const safeDuration = Number.isFinite(durationMs) && durationMs > 0 ? durationMs : 25;
-		const timer = setTimeout(() => {
-			this.releaseTimers.delete(timer);
-			this.sendKey(key, false);
-		}, safeDuration);
-		this.releaseTimers.add(timer);
+		const keysym = keyToKeysym(key);
+		if (keysym === null) {
+			return false;
+		}
 
-		return true;
+		return this.#writeKeyTap(keysym);
 	}
 
 	#writeKeyEvent(keysym, down) {
@@ -359,6 +355,19 @@ export class VncTcpService extends EventEmitter {
 			this.activeKeysyms.delete(keysym);
 		}
 
+		return true;
+	}
+
+	#writeKeyTap(keysym) {
+		if (!this.socket || this.socket.destroyed) {
+			return false;
+		}
+
+		this.socket.write(Buffer.concat([
+			createRfbKeyEvent(keysym, true),
+			createRfbKeyEvent(keysym, false),
+		]));
+		this.activeKeysyms.delete(keysym);
 		return true;
 	}
 
