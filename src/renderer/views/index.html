@@ -9,6 +9,145 @@
     <link rel="stylesheet" href="../assets/styles/global.css">
     <link rel="stylesheet" type="text/css" href="../assets/styles/notie.min.css">
     <link rel="stylesheet" href="../assets/styles/style.css">
+
+    <style>
+        /* ── TCP Side Tab & Drawer ─────────────────────────────── */
+
+        /* Fixed vertical tab on the right edge */
+        #tcp-side-tab {
+            position: fixed;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 1100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            gap: 6px;
+            padding: 14px 8px;
+            background: #2a2a2e;
+            color: #e0e0e0;
+            border-radius: 10px 0 0 10px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-right: none;
+            box-shadow: -3px 0 12px rgba(0,0,0,0.35);
+            user-select: none;
+            transition: background 0.2s, box-shadow 0.2s, padding 0.2s;
+        }
+
+        #tcp-side-tab:hover {
+            background: #3a3a42;
+            box-shadow: -4px 0 18px rgba(0,0,0,0.5);
+            padding: 14px 11px;
+        }
+
+        /* Status dot on the side tab */
+        #tcp-side-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #e74c3c;
+            flex-shrink: 0;
+            margin-bottom: 4px;
+            transition: background 0.3s;
+            box-shadow: 0 0 0 0 rgba(231, 76, 60, 0);
+        }
+
+        #tcp-side-dot.connected {
+            background: #2ecc71;
+            animation: pulse-green 2s infinite;
+        }
+
+        @keyframes pulse-green {
+            0%   { box-shadow: 0 0 0 0 rgba(46,204,113,0.6); }
+            70%  { box-shadow: 0 0 0 6px rgba(46,204,113,0); }
+            100% { box-shadow: 0 0 0 0 rgba(46,204,113,0); }
+        }
+
+        /* Overlay backdrop */
+        #tcp-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.45);
+            z-index: 1050;
+            backdrop-filter: blur(2px);
+            opacity: 0;
+            transition: opacity 0.25s;
+        }
+
+        #tcp-overlay.open {
+            display: block;
+            opacity: 1;
+        }
+
+        /* The drawer panel itself — slide in from the right */
+        #tcp-panel {
+            position: fixed !important;
+            top: 0;
+            right: -420px;         /* hidden off-screen */
+            width: 380px;
+            max-width: 92vw;
+            height: 100vh;
+            overflow-y: auto;
+            z-index: 1080;
+            background: #1e1e22;
+            border-left: 1px solid rgba(255,255,255,0.08);
+            box-shadow: -6px 0 32px rgba(0,0,0,0.55);
+            padding: 22px 20px 30px;
+            box-sizing: border-box;
+            transition: right 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+            /* override any existing display:none from the original hidden attribute */
+            display: flex !important;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        /* When drawer is open */
+        #tcp-panel.drawer-open {
+            right: 0;
+        }
+
+        /* Close button inside panel */
+        #tcp-drawer-close {
+            position: absolute;
+            top: 14px;
+            right: 16px;
+            background: none;
+            border: none;
+            color: #aaa;
+            cursor: pointer;
+            font-size: 20px;
+            line-height: 1;
+            padding: 4px 6px;
+            border-radius: 6px;
+            transition: color 0.15s, background 0.15s;
+        }
+
+        #tcp-drawer-close:hover {
+            color: #fff;
+            background: rgba(255,255,255,0.08);
+        }
+
+        /* Tighten up the existing tcp-panel inner styles for the drawer */
+        .tcp-panel-header {
+            margin-top: 6px;
+        }
+
+        .tcp-log-panel {
+            flex: 1;
+        }
+
+        .tcp-log {
+            max-height: 220px;
+        }
+    </style>
 </head>
 
 <body>
@@ -47,7 +186,8 @@
                 </svg>
                 Recent Play
             </button>
-            <button class="nav-tab" data-tab="tcp">
+            <!-- TCP tab kept in nav for compatibility with indexViewModel.js -->
+            <button class="nav-tab" data-tab="tcp" id="nav-tab-tcp">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="nav-icon" viewBox="0 0 16 16">
                     <path d="M4.715 6.542 3.343 7.914a3 3 0 1 0 4.243 4.243l1.828-1.829A3 3 0 0 0 9.9 6.2a.75.75 0 0 0-1.061 1.061 1.5 1.5 0 0 1-.486 2.006l-1.828 1.829a1.5 1.5 0 0 1-2.121-2.122l1.371-1.371a.75.75 0 0 0-1.06-1.061z"/>
                     <path d="m6.586 5.672 1.828-1.829a1.5 1.5 0 0 1 2.122 2.122L9.164 7.336a.75.75 0 1 0 1.061 1.061l1.371-1.371a3 3 0 1 0-4.242-4.243L5.525 4.611A3 3 0 0 0 5.04 8.74a.75.75 0 1 0 1.061-1.061 1.5 1.5 0 0 1 .485-2.007z"/>
@@ -62,7 +202,20 @@
         <!-- Music sheets will be dynamically inserted here -->
     </div>
 
-    <div id="tcp-panel" class="tcp-panel" hidden>
+    <!-- ── TCP Drawer Overlay ───────────────────────────────────── -->
+    <div id="tcp-overlay"></div>
+
+    <!-- ── TCP Fixed Side Tab ──────────────────────────────────── -->
+    <div id="tcp-side-tab" title="Open TCP panel">
+        <span id="tcp-side-dot"></span>
+        TCP
+    </div>
+
+    <!-- ── TCP Panel (now a fixed side drawer) ────────────────── -->
+    <div id="tcp-panel" class="tcp-panel">
+        <!-- Close button -->
+        <button id="tcp-drawer-close" title="Close panel">&#x2715;</button>
+
         <div class="tcp-panel-header">
             <h2>Auto iOS - Connect</h2>
             <span id="tcp-status" class="tcp-status disconnected">Disconnected</span>
@@ -225,6 +378,57 @@
     <!-- JavaScript dependencies -->
     <script type="text/javascript" src="../assets/scripts/notie.js"></script>
     <script type="text/javascript" src="../viewmodels/indexViewModel.js"></script>
+
+    <!-- ── TCP Side Drawer Script ──────────────────────────────── -->
+    <script>
+        (function () {
+            var panel   = document.getElementById('tcp-panel');
+            var overlay = document.getElementById('tcp-overlay');
+            var sideTab = document.getElementById('tcp-side-tab');
+            var dot     = document.getElementById('tcp-side-dot');
+            var closeBtn = document.getElementById('tcp-drawer-close');
+
+            // Remove the `hidden` attribute the original markup sets on #tcp-panel
+            // so our CSS (position:fixed, display:flex) can manage visibility instead.
+            panel.removeAttribute('hidden');
+
+            function openDrawer() {
+                panel.classList.add('drawer-open');
+                overlay.classList.add('open');
+            }
+
+            function closeDrawer() {
+                panel.classList.remove('drawer-open');
+                overlay.classList.remove('open');
+            }
+
+            sideTab.addEventListener('click', function () {
+                panel.classList.contains('drawer-open') ? closeDrawer() : openDrawer();
+            });
+
+            overlay.addEventListener('click', closeDrawer);
+            closeBtn.addEventListener('click', closeDrawer);
+
+            // Mirror the TCP nav tab so indexViewModel still works:
+            // clicking the hidden nav TCP tab also opens the drawer.
+            var navTcpTab = document.getElementById('nav-tab-tcp');
+            if (navTcpTab) {
+                navTcpTab.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    openDrawer();
+                });
+            }
+
+            // Watch #tcp-status for connection state to update the side-tab dot.
+            var statusEl = document.getElementById('tcp-status');
+            if (statusEl && window.MutationObserver) {
+                new MutationObserver(function () {
+                    var connected = statusEl.classList.contains('connected');
+                    dot.classList.toggle('connected', connected);
+                }).observe(statusEl, { attributes: true, attributeFilter: ['class'], childList: true, subtree: true });
+            }
+        })();
+    </script>
 
     <!-- Update Prompt Dialog -->
     <div id="update-prompt" class="update-prompt">
