@@ -62,7 +62,21 @@ export function registerIpcHandlers({ windowController, configService, autoPlayS
 	});
 
 	ipcMain.on("longPressMode", (_, value) => {
-		configService.updatePanel({ longPressMode: Boolean(value) });
+		const enabled = Boolean(value);
+		configService.updatePanel({ longPressMode: enabled });
+
+		// If VNC TCP output is enabled, notify the remote by sending a small
+		// application-level packet. This can be used by remote helpers to
+		// switch hold behaviour. Use a simple text marker so it's easy to
+		// recognize on the remote side.
+		try {
+			if (vncTcpService && typeof vncTcpService.sendWord === 'function' && vncTcpService.shouldUseTcpOutput()) {
+				const word = enabled ? "LONG_PRESS:ON" : "LONG_PRESS:OFF";
+				vncTcpService.sendWord(word);
+			}
+		} catch (err) {
+			console.error("IPC", "Failed to send long-press packet", err);
+		}
 	});
 
 	ipcMain.on("changeSpeed", (_, value) => {

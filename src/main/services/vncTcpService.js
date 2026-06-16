@@ -349,7 +349,7 @@ export class VncTcpService extends EventEmitter {
 		return this.#writeKeyEvent(keysym, isDown);
 	}
 
-	tapKey(key) {
+	tapKey(key, durationMs) {
 		if (!this.config.enabled || !this.isConnected) {
 			return false;
 		}
@@ -359,8 +359,35 @@ export class VncTcpService extends EventEmitter {
 			return false;
 		}
 
-		this.#queueKeyTap(keysym);
+		this.#queueKeyTap(keysym, durationMs);
 		return true;
+	}
+
+	/**
+	 * Send a raw UTF-8 word packet to the TCP connection. This is intended
+	 * for simple application-level commands when the remote server expects
+	 * plain text messages. Use with caution against standard RFB servers.
+	 *
+	 * @param {string} word
+	 * @returns {boolean}
+	 */
+	sendWord(word) {
+		if (!this.config.enabled || !this.isConnected) {
+			return false;
+		}
+
+		if (!this.socket || this.socket.destroyed) {
+			return false;
+		}
+
+		try {
+			this.socket.write(createTcpWordPacket(word));
+			this.#log(`Sent TCP word packet: ${String(word)}`, "info");
+			return true;
+		} catch (error) {
+			this.#log(`Failed to send TCP word packet: ${error?.message ?? error}`, "error");
+			return false;
+		}
 	}
 
 	#writeKeyEvent(keysym, down) {
@@ -378,19 +405,19 @@ export class VncTcpService extends EventEmitter {
 		return true;
 	}
 
-	#queueKeyTap(keysym) {
+	#queueKeyTap(keysym, durationMs) {
 		const generation = this.tapGeneration;
 		let queue = this.tapQueues.get(keysym);
 		if (!queue) {
 			queue = {
 				generation,
-				pending: 0,
+				pending: [],
 				running: false,
 			};
 			this.tapQueues.set(keysym, queue);
 		}
 
-		queue.pending += 1;
+		queue.pending.push(durationMs);
 		if (!queue.running) {
 			this.#drainTapQueue(keysym, queue);
 		}
@@ -403,24 +430,27 @@ export class VncTcpService extends EventEmitter {
 
 		queue.running = true;
 		const runNext = () => {
-			if (queue.generation !== this.tapGeneration || queue.pending <= 0) {
+			if (queue.generation !== this.tapGeneration || queue.pending.length <= 0) {
 				this.tapQueues.delete(keysym);
 				return;
 			}
 
-			queue.pending -= 1;
+			const nextDuration = queue.pending.shift();
 			if (!this.#canWriteTap(queue.generation)) {
 				this.tapQueues.delete(keysym);
 				return;
 			}
 
 			this.#writeKeyEvent(keysym, true);
+			const delayMs = typeof nextDuration === "number" && Number.isFinite(nextDuration) && nextDuration > 0
+				? Math.max(1, Math.round(nextDuration))
+				: this.config.tapDelayMs;
 			this.#setTapTimer(() => {
 				if (this.#canWriteTap(queue.generation)) {
 					this.#writeKeyEvent(keysym, false);
 				}
 				runNext();
-			}, this.config.tapDelayMs);
+			}, delayMs);
 		};
 
 		runNext();

@@ -90,7 +90,7 @@ describe("VncTcpService key output", () => {
 			expect(socket.write).toHaveBeenCalledTimes(1);
 			expect(socket.write).toHaveBeenNthCalledWith(1, createRfbKeyEvent(0x79, true));
 
-			jest.advanceTimersByTime(11);
+			jest.advanceTimersByTime(24);
 			expect(socket.write).toHaveBeenCalledTimes(1);
 
 			jest.advanceTimersByTime(1);
@@ -112,12 +112,12 @@ describe("VncTcpService key output", () => {
 			expect(socket.write).toHaveBeenCalledTimes(1);
 			expect(socket.write).toHaveBeenNthCalledWith(1, createRfbKeyEvent(0x79, true));
 
-			jest.advanceTimersByTime(12);
+			jest.advanceTimersByTime(25);
 			expect(socket.write).toHaveBeenCalledTimes(3);
 			expect(socket.write).toHaveBeenNthCalledWith(2, createRfbKeyEvent(0x79, false));
 			expect(socket.write).toHaveBeenNthCalledWith(3, createRfbKeyEvent(0x79, true));
 
-			jest.advanceTimersByTime(12);
+			jest.advanceTimersByTime(25);
 			expect(socket.write).toHaveBeenCalledTimes(4);
 			expect(socket.write).toHaveBeenNthCalledWith(4, createRfbKeyEvent(0x79, false));
 		} finally {
