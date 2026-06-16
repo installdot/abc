@@ -1,4 +1,4 @@
-import { Hardware } from "keysender";
+import { getHardware } from "./keysenderAdapter.js";
 
 export class AutoPlayService {
 	constructor(configService, vncTcpService = null) {
@@ -144,7 +144,7 @@ export class AutoPlayService {
 			y: 0, u: 1, i: 2, o: 3, p: 4, h: 5, j: 6, k: 7,
 			l: 8, ";": 9, n: 10, m: 11, ",": 12, ".": 13, "/": 14
 		};
-		const ks = new Hardware("Sky").keyboard;
+		const ks = getHardware("Sky").keyboard;
 		const { longPressMode } = this.panel;
 		const delayNextMs = this._getSafeDelayNextMs();
 		const minPressTimeSong = 25;

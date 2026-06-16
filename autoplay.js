@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { Hardware } from "keysender";
+import { getHardware } from "./src/main/services/keysenderAdapter.js";
 import {fileURLToPath} from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,7 +18,7 @@ for (let i of json.songNotes) {
 
 
 (async ()=>{
-    let ks = (new Hardware("Sky")).keyboard;
+    let ks = getHardware("Sky").keyboard;
     let objKey = Object.keys(tempEnc);
 
     for (let i=1; i < objKey.length; i++) {
