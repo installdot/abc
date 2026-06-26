@@ -353,6 +353,7 @@ const bindingKeySelect = document.getElementById("binding-key-select");
 const bindingCaptureButton = document.getElementById("binding-capture");
 const bindingClearButton = document.getElementById("binding-clear");
 const bindingCanvas = document.getElementById("binding-canvas");
+const bindingImageWrapper = document.querySelector(".binding-image-wrapper");
 const bindingMarker = document.getElementById("binding-marker");
 const bindingFeedback = document.getElementById("binding-feedback");
 const bindingList = document.getElementById("binding-list");
@@ -419,12 +420,20 @@ function clearBindingMarker() {
   if (bindingMarker) {
     bindingMarker.hidden = true;
   }
+  if (!bindingImageWrapper) {
+    return;
+  }
+  bindingImageWrapper.querySelectorAll('.binding-marker.dynamic').forEach((marker) => marker.remove());
 }
 
 function renderBindingEntries(bindings = {}) {
   bindingActiveBindings = { ...bindings };
   if (!bindingList) {
     return;
+  }
+
+  if (bindingImageWrapper) {
+    bindingImageWrapper.querySelectorAll('.binding-marker.dynamic').forEach((marker) => marker.remove());
   }
 
   bindingList.innerHTML = "";
@@ -460,10 +469,57 @@ function renderBindingEntries(bindings = {}) {
   }
 }
 
+function renderBindingMarkers(bindings = {}) {
+  if (!bindingImageWrapper || !bindingCanvas || !bindingImageWidth || !bindingImageHeight) {
+    return;
+  }
+
+  const displayRect = bindingCanvas.getBoundingClientRect();
+  const widthRatio = displayRect.width / bindingImageWidth;
+  const heightRatio = displayRect.height / bindingImageHeight;
+
+  for (const [key, entry] of Object.entries(bindings)) {
+    if (!entry || typeof entry.x !== 'number' || typeof entry.y !== 'number') {
+      continue;
+    }
+
+    const marker = bindingMarker ? bindingMarker.cloneNode(true) : document.createElement('span');
+    marker.className = 'binding-marker dynamic';
+    marker.hidden = false;
+    marker.textContent = key.toUpperCase();
+    marker.dataset.key = key;
+    marker.style.left = `${Math.round(entry.x * widthRatio)}px`;
+    marker.style.top = `${Math.round(entry.y * heightRatio)}px`;
+    marker.title = `${key.toUpperCase()} (${entry.x}, ${entry.y})`;
+
+    marker.addEventListener('contextmenu', async (event) => {
+      event.preventDefault();
+      const targetKey = event.currentTarget.dataset.key;
+      if (targetKey) {
+        await removeBindingByKey(targetKey);
+      }
+    });
+
+    bindingImageWrapper.appendChild(marker);
+  }
+}
+
+async function removeBindingByKey(key) {
+  try {
+    await ipcRenderer.invoke('vnc-tcp-remove-binding', key);
+    await loadVncBindings();
+    renderBindingMarkers(bindingActiveBindings);
+    updateBindingFeedback(`Removed binding for ${key.toUpperCase()}`, 'success');
+  } catch (error) {
+    updateBindingFeedback(`Remove failed: ${error?.message ?? error}`, 'error');
+  }
+}
+
 async function loadVncBindings() {
   try {
     const bindings = await ipcRenderer.invoke("vnc-tcp-get-bindings");
     renderBindingEntries(bindings);
+    renderBindingMarkers(bindings);
     return bindings;
   } catch (error) {
     updateBindingFeedback(`Failed to load bindings: ${error?.message ?? error}`,"error");
@@ -525,6 +581,7 @@ if (bindingCaptureButton) {
       }
 
       drawBindingImage(result.image, result.width, result.height);
+      renderBindingMarkers(bindingActiveBindings);
     } catch (error) {
       updateBindingFeedback(`Capture failed: ${error?.message ?? error}`, "error");
     }
@@ -562,10 +619,36 @@ if (bindingCanvas) {
         y,
       });
       await loadVncBindings();
-      showBindingMarker(event.clientX - rect.left, event.clientY - rect.top);
+      renderBindingMarkers(bindingActiveBindings);
       updateBindingFeedback(`Bound ${bindingSelectedKey.toUpperCase()} to (${x}, ${y}).`, "success");
     } catch (error) {
       updateBindingFeedback(`Binding failed: ${error?.message ?? error}`, "error");
+    }
+  });
+
+  bindingCanvas.addEventListener("contextmenu", async (event) => {
+    event.preventDefault();
+    const bounds = bindingCanvas.getBoundingClientRect();
+    const px = Math.round(((event.clientX - bounds.left) * bindingImageWidth) / bounds.width);
+    const py = Math.round(((event.clientY - bounds.top) * bindingImageHeight) / bounds.height);
+    let nearestKey = null;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+
+    for (const [key, entry] of Object.entries(bindingActiveBindings)) {
+      const dx = px - entry.x;
+      const dy = py - entry.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestKey = key;
+      }
+    }
+
+    const threshold = Math.max(12, Math.min(bindingImageWidth, bindingImageHeight) * 0.04);
+    if (nearestKey && nearestDistance <= threshold) {
+      await removeBindingByKey(nearestKey);
+    } else {
+      updateBindingFeedback("Right-click closer to a binding to remove it.", "error");
     }
   });
 }

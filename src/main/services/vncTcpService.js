@@ -474,12 +474,13 @@ export class VncTcpService extends EventEmitter {
 		request.writeUInt16BE(height, 8);
 		this.socket.write(request);
 
-		const messageType = (await this.#readBytes(1)).readUInt8(0);
+		const header = await this.#readBytes(4);
+		const messageType = header.readUInt8(0);
 		if (messageType !== 0) {
 			return { success: false, error: `Unexpected VNC message type ${messageType}` };
 		}
 
-		const numberOfRectangles = (await this.#readBytes(2)).readUInt16BE(0);
+		const numberOfRectangles = header.readUInt16BE(2);
 		const fullImage = Buffer.alloc(width * height * 4);
 
 		for (let i = 0; i < numberOfRectangles; i++) {
