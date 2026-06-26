@@ -161,6 +161,100 @@
             min-width: 0;
             box-sizing: border-box;
         }
+
+        .binding-panel {
+            display: none;
+            flex-direction: column;
+            gap: 12px;
+            padding: 20px;
+            background: #121214;
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.08);
+            margin: 18px;
+        }
+
+        .binding-panel.visible {
+            display: flex;
+        }
+
+        .binding-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .binding-actions select,
+        .binding-actions button {
+            min-height: 40px;
+        }
+
+        .binding-image-wrapper {
+            position: relative;
+            width: 100%;
+            max-width: 100%;
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 12px;
+            overflow: hidden;
+            background: #000;
+        }
+
+        .binding-image-wrapper img {
+            width: 100%;
+            height: auto;
+            display: block;
+            cursor: crosshair;
+            user-select: none;
+        }
+
+        .binding-marker {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: rgba(255, 99, 71, 0.85);
+            border: 2px solid white;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        .binding-list {
+            display: grid;
+            gap: 10px;
+            max-width: 100%;
+        }
+
+        .binding-entry {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: center;
+            padding: 10px 14px;
+            background: rgba(255,255,255,0.04);
+            border-radius: 10px;
+        }
+
+        .binding-entry strong {
+            color: #f5f5f5;
+        }
+
+        .binding-entry button {
+            min-width: 60px;
+        }
+
+        .binding-feedback {
+            min-height: 20px;
+            color: #e5e7eb;
+            font-size: 0.95rem;
+        }
+
+        .binding-feedback.error {
+            color: #ff6b6b;
+        }
+
+        .binding-feedback.success {
+            color: #7ef09d;
+        }
     </style>
 </head>
 
@@ -199,6 +293,13 @@
                     <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z"/>
                 </svg>
                 Recent Play
+            </button>
+            <button class="nav-tab" data-tab="binding">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="nav-icon" viewBox="0 0 16 16">
+                    <path d="M8 1a.5.5 0 0 1 .5.5V3h1.5a.5.5 0 0 1 0 1H8.5v1.5a.5.5 0 0 1-1 0V4H6a.5.5 0 0 1 0-1h1.5V1.5A.5.5 0 0 1 8 1z"/>
+                    <path d="M3 6.5A2.5 2.5 0 0 1 5.5 4h5A2.5 2.5 0 0 1 13 6.5v3A2.5 2.5 0 0 1 10.5 12h-5A2.5 2.5 0 0 1 3 9.5v-3zm1 0v3A1.5 1.5 0 0 0 5.5 11h5A1.5 1.5 0 0 0 12 9.5v-3A1.5 1.5 0 0 0 10.5 5h-5A1.5 1.5 0 0 0 4 6.5z"/>
+                </svg>
+                Bindings
             </button>
             <!-- TCP nav tab removed per user request -->
         </div>
@@ -267,6 +368,24 @@
             </div>
             <div class="tcp-log" id="tcp-log"></div>
         </div>
+    </div>
+
+    <!-- Binding panel for VNC coordinate mapping -->
+    <div id="binding-panel" class="binding-panel" hidden>
+        <div class="binding-actions">
+            <label for="binding-key-select">
+                Select key
+                <select id="binding-key-select"></select>
+            </label>
+            <button class="btn" type="button" id="binding-capture">Capture Screen</button>
+            <button class="btn secondary" type="button" id="binding-clear">Clear</button>
+        </div>
+        <div class="binding-image-wrapper">
+            <canvas id="binding-canvas" width="0" height="0"></canvas>
+            <span class="binding-marker" id="binding-marker" hidden></span>
+        </div>
+        <div id="binding-feedback" class="binding-feedback"></div>
+        <div class="binding-list" id="binding-list"></div>
     </div>
 
     <!-- Add new sheet button (floating action button) -->

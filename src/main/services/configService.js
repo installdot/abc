@@ -43,6 +43,7 @@ export class ConfigService {
 				enabled: false,
 				tapDelayMs: 12,
 			},
+			vncBindings: {},
 			appTheme: "dark",
 		};
 
@@ -152,6 +153,24 @@ export class ConfigService {
 			...this.config.vncTcp,
 			...partial,
 		};
+		this.save();
+	}
+
+	updateVncBindings(partial) {
+		this.config.vncBindings = {
+			...this.config.vncBindings,
+			...partial,
+		};
+		this.save();
+	}
+
+	removeVncBinding(key) {
+		if (!this.config.vncBindings || !(key in this.config.vncBindings)) {
+			return;
+		}
+		const next = { ...this.config.vncBindings };
+		delete next[key];
+		this.config.vncBindings = next;
 		this.save();
 	}
 

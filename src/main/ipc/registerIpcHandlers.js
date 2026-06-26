@@ -109,6 +109,24 @@ export function registerIpcHandlers({ windowController, configService, autoPlayS
 		return vncTcpService.disconnect();
 	});
 
+	ipcMain.handle("vnc-tcp-capture", async () => {
+		return vncTcpService.captureScreenshot();
+	});
+
+	ipcMain.handle("vnc-tcp-save-binding", (_, { key, x, y }) => {
+		configService.updateVncBindings({ [key]: { x, y } });
+		return configService.value.vncBindings;
+	});
+
+	ipcMain.handle("vnc-tcp-get-bindings", () => {
+		return configService.value.vncBindings;
+	});
+
+	ipcMain.handle("vnc-tcp-remove-binding", (_, key) => {
+		configService.removeVncBinding(key);
+		return configService.value.vncBindings;
+	});
+
 	ipcMain.on("check-update", async (event) => {
 		try {
 			const info = await updateService.getVersionInfo();

@@ -168,52 +168,6 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   
   /**
-   * Filter content based on selected tab
-   * @param {string} tabType - The type of tab selected
-   */
-  function filterContentByTab(tabType) {
-    const isTcpTab = tabType === 'tcp';
-    setTcpPanelVisible(isTcpTab);
-    if (isTcpTab) {
-      return;
-    }
-
-    const cards = document.querySelectorAll('.card');
-    const searchTerm = document.getElementById('search-bar').value.toLowerCase().trim();
-    
-    cards.forEach((card, index) => {
-      if (index < listSheet.length) {
-        const sheetData = listSheet[index];
-        const sheetName = sheetData.name.toLowerCase();
-        const authorName = (sheetData.author || "").toLowerCase();
-        
-        let shouldShow = false;
-        
-        switch (tabType) {
-          case 'all-songs':
-            shouldShow = true;
-            break;
-          case 'favorite':
-            shouldShow = favorites.includes(sheetData.name);
-            break;
-          case 'recent-play':
-            shouldShow = recentPlays.includes(sheetData.name);
-            break;
-        }
-        
-        // Apply search filter if there's a search term
-        if (shouldShow && searchTerm) {
-          shouldShow = sheetName.includes(searchTerm) || authorName.includes(searchTerm);
-        }
-        
-        card.style.display = shouldShow ? "" : "none";
-      } else {
-        card.style.display = "none";
-      }
-    });
-  }
-  
-  /**
    * Add a song to favorites
    * @param {string} songName - Name of the song to add to favorites
    */
@@ -276,9 +230,21 @@ document.addEventListener("DOMContentLoaded", () => {
  */
 function filterContentByTab(tabType) {
   const isTcpTab = tabType === 'tcp';
-  setTcpPanelVisible(isTcpTab);
+  const isBindingTab = tabType === 'binding';
+
   if (isTcpTab) {
+    setTcpPanelVisible(true);
     return;
+  }
+
+  if (isBindingTab) {
+    setBindingPanelVisible(true);
+    return;
+  }
+
+  setTcpPanelVisible(false);
+  if (bindingPanel) {
+    bindingPanel.hidden = true;
   }
 
   const cards = document.querySelectorAll('.card');
@@ -382,9 +348,237 @@ if (searchBar && contentContainer) {
 
 setupVncTcpControls();
 
+const bindingPanel = document.getElementById("binding-panel");
+const bindingKeySelect = document.getElementById("binding-key-select");
+const bindingCaptureButton = document.getElementById("binding-capture");
+const bindingClearButton = document.getElementById("binding-clear");
+const bindingCanvas = document.getElementById("binding-canvas");
+const bindingMarker = document.getElementById("binding-marker");
+const bindingFeedback = document.getElementById("binding-feedback");
+const bindingList = document.getElementById("binding-list");
+
+let bindingImageWidth = 0;
+let bindingImageHeight = 0;
+let bindingSelectedKey = keys[0] || null;
+let bindingActiveBindings = {};
+
+if (bindingPanel) {
+  bindingPanel.hidden = true;
+}
+
+function updateBindingKeyOptions() {
+  if (!bindingKeySelect) {
+    return;
+  }
+
+  const selectedValue = bindingKeySelect.value;
+  bindingKeySelect.innerHTML = "";
+
+  for (const key of keys) {
+    const option = document.createElement("option");
+    option.value = key;
+    option.textContent = key.toUpperCase();
+    bindingKeySelect.appendChild(option);
+  }
+
+  if (selectedValue && Array.from(bindingKeySelect.options).some((option) => option.value === selectedValue)) {
+    bindingKeySelect.value = selectedValue;
+  }
+
+  bindingSelectedKey = bindingKeySelect.value || keys[0] || null;
+}
+
+function updateBindingFeedback(message, type = "info") {
+  if (!bindingFeedback) {
+    return;
+  }
+
+  bindingFeedback.textContent = message || "";
+  bindingFeedback.className = `binding-feedback ${type}`;
+}
+
+function setBindingPanelVisible(isVisible) {
+  if (bindingPanel) {
+    bindingPanel.hidden = !isVisible;
+  }
+  if (contentContainer) {
+    contentContainer.style.display = isVisible ? "none" : "";
+  }
+  if (searchContainer) {
+    searchContainer.style.display = isVisible ? "none" : "";
+  }
+  if (addSheetButton) {
+    addSheetButton.style.display = isVisible ? "none" : "";
+  }
+  if (tcpPanel) {
+    tcpPanel.hidden = true;
+  }
+}
+
+function clearBindingMarker() {
+  if (bindingMarker) {
+    bindingMarker.hidden = true;
+  }
+}
+
+function renderBindingEntries(bindings = {}) {
+  bindingActiveBindings = { ...bindings };
+  if (!bindingList) {
+    return;
+  }
+
+  bindingList.innerHTML = "";
+  const keysOrdered = Object.keys(bindingActiveBindings).sort();
+
+  if (keysOrdered.length === 0) {
+    bindingList.textContent = "No bindings configured yet.";
+    return;
+  }
+
+  for (const key of keysOrdered) {
+    const entry = bindingActiveBindings[key];
+    const row = document.createElement("div");
+    row.className = "binding-entry";
+    row.innerHTML = `<div><strong>${key.toUpperCase()}</strong> (${entry.x}, ${entry.y})</div>`;
+
+    const removeButton = document.createElement("button");
+    removeButton.className = "btn secondary";
+    removeButton.type = "button";
+    removeButton.textContent = "Remove";
+    removeButton.addEventListener("click", async () => {
+      try {
+        await ipcRenderer.invoke("vnc-tcp-remove-binding", key);
+        await loadVncBindings();
+        updateBindingFeedback(`Removed binding for ${key.toUpperCase()}`);
+      } catch (error) {
+        updateBindingFeedback(`Remove failed: ${error?.message ?? error}`,"error");
+      }
+    });
+
+    row.appendChild(removeButton);
+    bindingList.appendChild(row);
+  }
+}
+
+async function loadVncBindings() {
+  try {
+    const bindings = await ipcRenderer.invoke("vnc-tcp-get-bindings");
+    renderBindingEntries(bindings);
+    return bindings;
+  } catch (error) {
+    updateBindingFeedback(`Failed to load bindings: ${error?.message ?? error}`,"error");
+    return {};
+  }
+}
+
+function drawBindingImage(rawBase64, width, height) {
+  if (!bindingCanvas || !bindingCanvas.getContext) {
+    return;
+  }
+
+  bindingImageWidth = width;
+  bindingImageHeight = height;
+  bindingCanvas.width = width;
+  bindingCanvas.height = height;
+  bindingCanvas.style.width = "100%";
+  bindingCanvas.style.height = "auto";
+
+  const ctx = bindingCanvas.getContext("2d");
+  const rawBuffer = Buffer.from(rawBase64, "base64");
+  const clamped = new Uint8ClampedArray(rawBuffer.buffer, rawBuffer.byteOffset, rawBuffer.byteLength);
+  const imageData = new ImageData(clamped, width, height);
+  ctx.putImageData(imageData, 0, 0);
+
+  clearBindingMarker();
+  updateBindingFeedback(`Screen captured (${width}x${height}). Click the image to bind a key.`);
+}
+
+function showBindingMarker(left, top) {
+  if (!bindingMarker) {
+    return;
+  }
+
+  bindingMarker.style.left = `${left}px`;
+  bindingMarker.style.top = `${top}px`;
+  bindingMarker.hidden = false;
+}
+
+if (bindingKeySelect) {
+  bindingKeySelect.addEventListener("change", () => {
+    bindingSelectedKey = bindingKeySelect.value || keys[0] || null;
+    updateBindingFeedback(`Selected key: ${bindingSelectedKey?.toUpperCase() ?? "none"}`);
+  });
+}
+
+if (bindingCaptureButton) {
+  bindingCaptureButton.addEventListener("click", async () => {
+    if (!vncTcpState || vncTcpState.status !== "connected") {
+      updateBindingFeedback("Connect to the VNC device first.", "error");
+      return;
+    }
+
+    updateBindingFeedback("Capturing remote screen...");
+    try {
+      const result = await ipcRenderer.invoke("vnc-tcp-capture");
+      if (!result || result.success !== true) {
+        throw new Error(result?.error || "Capture failed");
+      }
+
+      drawBindingImage(result.image, result.width, result.height);
+    } catch (error) {
+      updateBindingFeedback(`Capture failed: ${error?.message ?? error}`, "error");
+    }
+  });
+}
+
+if (bindingClearButton) {
+  bindingClearButton.addEventListener("click", () => {
+    clearBindingMarker();
+    updateBindingFeedback("Marker cleared.");
+  });
+}
+
+if (bindingCanvas) {
+  bindingCanvas.style.cursor = "crosshair";
+  bindingCanvas.addEventListener("click", async (event) => {
+    if (!bindingSelectedKey) {
+      updateBindingFeedback("Select a key before choosing a location.", "error");
+      return;
+    }
+
+    if (!bindingImageWidth || !bindingImageHeight) {
+      updateBindingFeedback("Capture the remote screen first.", "error");
+      return;
+    }
+
+    const rect = bindingCanvas.getBoundingClientRect();
+    const x = Math.round(((event.clientX - rect.left) * bindingImageWidth) / rect.width);
+    const y = Math.round(((event.clientY - rect.top) * bindingImageHeight) / rect.height);
+
+    try {
+      await ipcRenderer.invoke("vnc-tcp-save-binding", {
+        key: bindingSelectedKey,
+        x,
+        y,
+      });
+      await loadVncBindings();
+      showBindingMarker(event.clientX - rect.left, event.clientY - rect.top);
+      updateBindingFeedback(`Bound ${bindingSelectedKey.toUpperCase()} to (${x}, ${y}).`, "success");
+    } catch (error) {
+      updateBindingFeedback(`Binding failed: ${error?.message ?? error}`, "error");
+    }
+  });
+}
+
+updateBindingKeyOptions();
+loadVncBindings();
+
 function setTcpPanelVisible(isVisible) {
   if (tcpPanel) {
     tcpPanel.hidden = !isVisible;
+  }
+  if (bindingPanel) {
+    bindingPanel.hidden = true;
   }
   if (contentContainer) {
     contentContainer.style.display = isVisible ? "none" : "";

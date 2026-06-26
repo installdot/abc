@@ -405,6 +405,166 @@ export class VncTcpService extends EventEmitter {
 		return true;
 	}
 
+	#decodeRawRect(width, height, pixelFormat, data) {
+		if (!pixelFormat || !pixelFormat.trueColorFlag) {
+			throw new Error("Unsupported pixel format for raw capture");
+		}
+
+		const bytesPerPixel = pixelFormat.bitsPerPixel / 8;
+		if (![3, 4].includes(bytesPerPixel)) {
+			throw new Error(`Unsupported bytesPerPixel: ${bytesPerPixel}`);
+		}
+
+		const output = Buffer.alloc(width * height * 4);
+		const rowBytes = width * bytesPerPixel;
+
+		for (let y = 0; y < height; y++) {
+			const rowStart = y * rowBytes;
+			for (let x = 0; x < width; x++) {
+				const pixelStart = rowStart + x * bytesPerPixel;
+				let pixelValue = 0;
+				if (bytesPerPixel === 4) {
+					pixelValue = pixelFormat.bigEndianFlag
+						? data.readUInt32BE(pixelStart)
+						: data.readUInt32LE(pixelStart);
+				} else {
+					const b0 = data.readUInt8(pixelStart);
+					const b1 = data.readUInt8(pixelStart + 1);
+					const b2 = data.readUInt8(pixelStart + 2);
+					pixelValue = pixelFormat.bigEndianFlag
+						? (b0 << 16) | (b1 << 8) | b2
+						: b0 | (b1 << 8) | (b2 << 16);
+				}
+
+				const red = Math.round(((pixelValue >> pixelFormat.redShift) & pixelFormat.redMax) * 255 / pixelFormat.redMax);
+				const green = Math.round(((pixelValue >> pixelFormat.greenShift) & pixelFormat.greenMax) * 255 / pixelFormat.greenMax);
+				const blue = Math.round(((pixelValue >> pixelFormat.blueShift) & pixelFormat.blueMax) * 255 / pixelFormat.blueMax);
+
+				const destIndex = (y * width + x) * 4;
+				output[destIndex] = red;
+				output[destIndex + 1] = green;
+				output[destIndex + 2] = blue;
+				output[destIndex + 3] = 255;
+			}
+		}
+
+		return output;
+	}
+
+	async captureScreenshot() {
+		if (!this.config.enabled || !this.isConnected) {
+			return { success: false, error: "VNC is not connected" };
+		}
+
+		const width = this.state.width;
+		const height = this.state.height;
+		const pixelFormat = this.serverPixelFormat;
+		if (!pixelFormat) {
+			return { success: false, error: "Server pixel format not available" };
+		}
+
+		this.#sendSetEncodings([0]);
+
+		const request = Buffer.alloc(10);
+		request.writeUInt8(3, 0);
+		request.writeUInt8(0, 1);
+		request.writeUInt16BE(0, 2);
+		request.writeUInt16BE(0, 4);
+		request.writeUInt16BE(width, 6);
+		request.writeUInt16BE(height, 8);
+		this.socket.write(request);
+
+		const messageType = (await this.#readBytes(1)).readUInt8(0);
+		if (messageType !== 0) {
+			return { success: false, error: `Unexpected VNC message type ${messageType}` };
+		}
+
+		const numberOfRectangles = (await this.#readBytes(2)).readUInt16BE(0);
+		const fullImage = Buffer.alloc(width * height * 4);
+
+		for (let i = 0; i < numberOfRectangles; i++) {
+			const rectHeader = await this.#readBytes(12);
+			const x = rectHeader.readUInt16BE(0);
+			const y = rectHeader.readUInt16BE(2);
+			const w = rectHeader.readUInt16BE(4);
+			const h = rectHeader.readUInt16BE(6);
+			const encoding = rectHeader.readInt32BE(8);
+
+			if (encoding !== 0) {
+				return { success: false, error: `Unsupported encoding ${encoding}, only raw is supported` };
+			}
+
+			const bytesPerPixel = pixelFormat.bitsPerPixel / 8;
+			const rectSize = w * h * bytesPerPixel;
+			const rawData = await this.#readBytes(rectSize);
+			const decoded = this.#decodeRawRect(w, h, pixelFormat, rawData);
+
+			for (let row = 0; row < h; row++) {
+				const srcStart = row * w * 4;
+				const dstStart = ((y + row) * width + x) * 4;
+			
+decoded.copy(fullImage, dstStart, srcStart, srcStart + w * 4);
+			}
+		}
+
+		return {
+			success: true,
+			width,
+			height,
+			image: fullImage.toString("base64"),
+		};
+	}
+
+	tapAt(x, y, durationMs) {
+		if (!this.config.enabled || !this.isConnected) {
+			return false;
+		}
+
+		return this.#queuePointerTap(x, y, durationMs);
+	}
+
+	#getKeyBinding(key) {
+		return this.configService.value.vncBindings?.[key] ?? null;
+	}
+
+	tapKey(key, durationMs) {
+		const binding = this.#getKeyBinding(key);
+		if (binding) {
+			return this.tapAt(binding.x, binding.y, durationMs);
+		}
+
+		if (!this.config.enabled || !this.isConnected) {
+			return false;
+		}
+
+		const keysym = keyToKeysym(key);
+		if (keysym === null) {
+			return false;
+		}
+
+		this.#queueKeyTap(keysym, durationMs);
+		return true;
+	}
+
+	sendKey(key, down) {
+		const binding = this.#getKeyBinding(key);
+		if (binding && down) {
+			return this.tapAt(binding.x, binding.y, this.config.tapDelayMs);
+		}
+
+		if (!this.config.enabled || !this.isConnected) {
+			return false;
+		}
+
+		const keysym = keyToKeysym(key);
+		if (keysym === null) {
+			return false;
+		}
+
+		const isDown = down === true;
+		return this.#writeKeyEvent(keysym, isDown);
+	}
+
 	#queueKeyTap(keysym, durationMs) {
 		const generation = this.tapGeneration;
 		let queue = this.tapQueues.get(keysym);
@@ -480,6 +640,67 @@ export class VncTcpService extends EventEmitter {
 		this.tapQueues.clear();
 	}
 
+	#parsePixelFormat(buffer) {
+		return {
+			bitsPerPixel: buffer.readUInt8(0),
+			depth: buffer.readUInt8(1),
+			bigEndianFlag: buffer.readUInt8(2) === 1,
+			trueColorFlag: buffer.readUInt8(3) === 1,
+			redMax: buffer.readUInt16BE(4),
+			greenMax: buffer.readUInt16BE(6),
+			blueMax: buffer.readUInt16BE(8),
+			redShift: buffer.readUInt8(10),
+			greenShift: buffer.readUInt8(11),
+			blueShift: buffer.readUInt8(12),
+		};
+	}
+
+	#sendSetEncodings(encodings = [0]) {
+		if (!this.socket || this.socket.destroyed) {
+			return false;
+		}
+
+		const buffer = Buffer.alloc(4 + encodings.length * 4);
+		buffer.writeUInt8(2, 0);
+		buffer.writeUInt8(0, 1);
+		buffer.writeUInt16BE(encodings.length, 2);
+		encodings.forEach((encoding, index) => {
+			buffer.writeInt32BE(encoding, 4 + index * 4);
+		});
+		this.socket.write(buffer);
+		return true;
+	}
+
+	#writePointerEvent(buttonMask, x, y) {
+		if (!this.socket || this.socket.destroyed) {
+			return false;
+		}
+
+		const message = Buffer.alloc(6);
+		message.writeUInt8(5, 0);
+		message.writeUInt8(buttonMask, 1);
+		message.writeUInt16BE(x, 2);
+		message.writeUInt16BE(y, 4);
+		this.socket.write(message);
+		return true;
+	}
+
+	#queuePointerTap(x, y, durationMs) {
+		if (!this.socket || this.socket.destroyed) {
+			return false;
+		}
+
+		const wait = typeof durationMs === "number" && Number.isFinite(durationMs) && durationMs > 0
+			? Math.max(1, Math.round(durationMs))
+			: this.config.tapDelayMs;
+
+		this.#writePointerEvent(1, x, y);
+		this.#setTapTimer(() => {
+			this.#writePointerEvent(0, x, y);
+		}, wait);
+		return true;
+	}
+
 	#connectSocket(socket, host, port) {
 		return new Promise((resolve, reject) => {
 			const timeout = setTimeout(() => {
@@ -539,8 +760,11 @@ export class VncTcpService extends EventEmitter {
 		const serverInit = await this.#readBytes(24);
 		const width = serverInit.readUInt16BE(0);
 		const height = serverInit.readUInt16BE(2);
+		const pixelFormat = this.#parsePixelFormat(serverInit.subarray(4, 20));
 		const nameLength = serverInit.readUInt32BE(20);
 		const desktopName = nameLength > 0 ? (await this.#readBytes(nameLength)).toString("utf8") : "";
+
+		this.serverPixelFormat = pixelFormat;
 
 		return {
 			serverVersion,
@@ -548,6 +772,7 @@ export class VncTcpService extends EventEmitter {
 			width,
 			height,
 			desktopName,
+			pixelFormat,
 		};
 	}
 
