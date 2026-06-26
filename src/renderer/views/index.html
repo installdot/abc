@@ -163,7 +163,7 @@
         }
 
         .binding-panel {
-            display: none;
+            display: flex;
             flex-direction: column;
             gap: 12px;
             padding: 20px;
@@ -171,6 +171,10 @@
             border-radius: 14px;
             border: 1px solid rgba(255,255,255,0.08);
             margin: 18px;
+        }
+
+        .binding-panel[hidden] {
+            display: none !important;
         }
 
         .binding-panel.visible {
