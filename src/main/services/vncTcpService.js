@@ -458,10 +458,46 @@ export class VncTcpService extends EventEmitter {
 
 		const width = this.state.width;
 		const height = this.state.height;
-		const pixelFormat = this.serverPixelFormat;
-		if (!pixelFormat) {
-			return { success: false, error: "Server pixel format not available" };
+
+		// Ask the server to send a true-color pixel format we can decode.
+		// Some servers announce a paletted or non-true-color format; explicitly
+		// request 32bpp/24 depth true-color so raw rectangles use a predictable
+		// layout (4 bytes per pixel, little-endian, RGB888 in 0:8:16 shifts).
+		const desiredPixelFormat = {
+			bitsPerPixel: 32,
+			depth: 24,
+			bigEndianFlag: false,
+			trueColorFlag: true,
+			redMax: 255,
+			greenMax: 255,
+			blueMax: 255,
+			redShift: 16,
+			greenShift: 8,
+			blueShift: 0,
+		};
+
+		// Send SetPixelFormat (client -> server) message (20 bytes)
+		try {
+			const spf = Buffer.alloc(20);
+			spf.writeUInt8(0, 0); // message-type: SetPixelFormat
+			// bytes 1-3 are padding (already zero)
+			spf.writeUInt8(desiredPixelFormat.bitsPerPixel, 4);
+			spf.writeUInt8(desiredPixelFormat.depth, 5);
+			spf.writeUInt8(desiredPixelFormat.bigEndianFlag ? 1 : 0, 6);
+			spf.writeUInt8(desiredPixelFormat.trueColorFlag ? 1 : 0, 7);
+			spf.writeUInt16BE(desiredPixelFormat.redMax, 8);
+			spf.writeUInt16BE(desiredPixelFormat.greenMax, 10);
+			spf.writeUInt16BE(desiredPixelFormat.blueMax, 12);
+			spf.writeUInt8(desiredPixelFormat.redShift, 14);
+			spf.writeUInt8(desiredPixelFormat.greenShift, 15);
+			spf.writeUInt8(desiredPixelFormat.blueShift, 16);
+			this.socket.write(spf);
+		} catch (err) {
+			// Non-fatal: proceed and try to decode using server-provided format
+			this.#log(`Failed to send SetPixelFormat: ${err?.message ?? err}`, "error");
 		}
+
+		const pixelFormat = desiredPixelFormat;
 
 		this.#sendSetEncodings([0]);
 
