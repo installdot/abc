@@ -1173,12 +1173,15 @@ function parseStoredSheetPayload(parsed, bitsPerPage) {
 	}
 
 	const rawKeyMap = parsed.keyMap && typeof parsed.keyMap === "object" ? parsed.keyMap : parsed;
+	const compatibleBitsPerPage = Array.isArray(parsed.songNotes)
+		? resolveCompatibleBitsPerPage(parsed.songNotes, bitsPerPage)
+		: resolveBitsPerPage(bitsPerPage);
 	const keyMap = normalizeStoredKeyMap(rawKeyMap);
 	const normalizedSongNotes = Array.isArray(parsed.songNotes)
-		? normalizeSongNotes(parsed.songNotes, bitsPerPage)
+		? normalizeSongNotes(parsed.songNotes, compatibleBitsPerPage)
 		: null;
 	const playbackNotes = normalizedSongNotes
-		? buildPlaybackNotesFromSongNotes(normalizedSongNotes, bitsPerPage)
+		? buildPlaybackNotesFromSongNotes(normalizedSongNotes, compatibleBitsPerPage)
 		: null;
 
 	return {
@@ -1221,6 +1224,36 @@ function resolveBitsPerPage(bitsPerPage) {
 		return Math.trunc(safeBitsPerPage);
 	}
 	return 16;
+}
+
+function resolveCompatibleBitsPerPage(songNotes, bitsPerPage) {
+	const safeBitsPerPage = resolveBitsPerPage(bitsPerPage);
+	const maxKeyIndex = getMaxSongNoteKeyIndex(songNotes);
+	if (maxKeyIndex === null || maxKeyIndex < safeBitsPerPage) {
+		return safeBitsPerPage;
+	}
+	if (maxKeyIndex <= 14) {
+		return maxKeyIndex + 1;
+	}
+	return safeBitsPerPage;
+}
+
+function getMaxSongNoteKeyIndex(songNotes) {
+	if (!Array.isArray(songNotes)) return null;
+	let maxKeyIndex = -1;
+
+	for (const note of songNotes) {
+		const key = typeof note?.key === "string" ? note.key.trim() : "";
+		const match = SKY_KEY_PATTERN.exec(key);
+		if (!match) continue;
+
+		const keyIndex = Number(match[2]);
+		if (Number.isInteger(keyIndex) && keyIndex > maxKeyIndex) {
+			maxKeyIndex = keyIndex;
+		}
+	}
+
+	return maxKeyIndex >= 0 ? maxKeyIndex : null;
 }
 
 function hasSongNotesWithHold(songNotes) {
@@ -1351,14 +1384,16 @@ function buildKeyMapFromPlaybackNotes(playbackNotes) {
 }
 
 function prepareSheetForStorage(json) {
-	const normalizedSongNotes = normalizeSongNotes(json.songNotes, json.bitsPerPage);
-	const playbackNotes = buildPlaybackNotesFromSongNotes(normalizedSongNotes, json.bitsPerPage);
+	const compatibleBitsPerPage = resolveCompatibleBitsPerPage(json.songNotes, json.bitsPerPage);
+	const normalizedSongNotes = normalizeSongNotes(json.songNotes, compatibleBitsPerPage);
+	const playbackNotes = buildPlaybackNotesFromSongNotes(normalizedSongNotes, compatibleBitsPerPage);
 	const keyMap = buildKeyMapFromPlaybackNotes(playbackNotes);
 
 	return {
 		songNotes: normalizedSongNotes,
 		playbackNotes,
 		keyMap,
+		bitsPerPage: compatibleBitsPerPage,
 		hasHoldNotes: hasSongNotesWithHold(normalizedSongNotes),
 	};
 }
@@ -1536,7 +1571,11 @@ function encSheet(json, extraMeta = {}) {
 	}
 
 	const prepared = prepareSheetForStorage(json);
-	const fileName = `${Base64.encode(random(1, 9999) + String(json.name || "").replace(/[^a-zA-Z0-9]/g, "-"))}.json`;
+	const normalizedSheet = {
+		...json,
+		bitsPerPage: prepared.bitsPerPage,
+	};
+	const fileName = `${Base64.encode(random(1, 9999) + String(normalizedSheet.name || "").replace(/[^a-zA-Z0-9]/g, "-"))}.json`;
 
 	fs.writeFileSync(
 		path.join(dataDirectory, fileName),
@@ -1549,13 +1588,13 @@ function encSheet(json, extraMeta = {}) {
 	);
 
 	listSheet.push({
-		name: json.name,
-		author: json.author || "Unknown",
-		transcribedBy: json.transcribedBy || "Unknown",
-		bpm: json.bpm,
-		bitsPerPage: json.bitsPerPage,
-		pitchLevel: json.pitchLevel,
-		isComposed: json.isComposed,
+		name: normalizedSheet.name,
+		author: normalizedSheet.author || "Unknown",
+		transcribedBy: normalizedSheet.transcribedBy || "Unknown",
+		bpm: normalizedSheet.bpm,
+		bitsPerPage: normalizedSheet.bitsPerPage,
+		pitchLevel: normalizedSheet.pitchLevel,
+		isComposed: normalizedSheet.isComposed,
 		keyMap: fileName,
 		hasHoldNotes: prepared.hasHoldNotes,
 		...(extraMeta.source ? {
@@ -1889,4 +1928,3 @@ function escapeHtml(value) {
 function escapeAttribute(value) {
 	return escapeHtml(value).replaceAll("`", "&#96;");
 }
-
