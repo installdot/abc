@@ -64,6 +64,14 @@ export function registerIpcHandlers({ windowController, configService, autoPlayS
 		windowController.openSheetEditor(args?.sheetIndex ?? 0);
 	});
 
+	ipcMain.on("set-shortcuts-suspended", (_, suspended) => {
+		if (suspended) {
+			windowController.suspendShortcuts();
+			return;
+		}
+		windowController.resumeShortcuts();
+	});
+
 	ipcMain.on("check-update", async (event) => {
 		try {
 			const info = await updateService.getVersionInfo();

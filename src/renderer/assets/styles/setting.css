@@ -273,6 +273,16 @@ body {
     background: rgba(255, 255, 255, 0.1);
 }
 
+body:not(.dark-mode) .header-action-btn.secondary {
+    background: #e2e8f0;
+    border-color: #cbd5e1;
+    color: #334155;
+}
+
+body:not(.dark-mode) .header-action-btn.secondary:hover {
+    background: #cbd5e1;
+}
+
 .header-action-btn i,
 .header-action-btn span {
     color: inherit;
@@ -1599,4 +1609,56 @@ body.dark-mode .bi-sliders { color: #fbbf24; }
 body.dark-mode .bi-lightning { color: #fb7185; }
 body.dark-mode .bi-arrow-clockwise { color: #38bdf8; }
 body.dark-mode .bi-shield-exclamation { color: #f87171; }
+
+/* Keep Settings version labels static. The main app update prompt still owns its animated version badge. */
+body .settings-container .version-info,
+body .settings-container .version-info:hover,
+body .settings-container .version-info:active {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+    cursor: default !important;
+}
+
+body .settings-container .version-info::before,
+body .settings-container .version-info:hover::before {
+    display: none !important;
+    content: none !important;
+    left: auto !important;
+    transition: none !important;
+}
+
+body .sidebar-header .version-info,
+body .sidebar-header .version-info:hover,
+body .sidebar-header .version-info:active {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    filter: none !important;
+    opacity: 1 !important;
+    pointer-events: none !important;
+}
+
+body > .update-prompt .version-info,
+body > .update-prompt .version-info:hover,
+body > .update-prompt .version-info:active {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.05)) !important;
+    border-color: rgba(255, 255, 255, 0.25) !important;
+    box-shadow:
+        0 4px 15px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+    pointer-events: none !important;
+}
+
+body > .update-prompt .version-info::before,
+body > .update-prompt .version-info:hover::before {
+    display: none !important;
+    content: none !important;
+    left: auto !important;
+    transition: none !important;
+}
   

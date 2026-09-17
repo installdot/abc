@@ -9,9 +9,11 @@ const appRoot = path.join(__dirname, "..", "..", "..");
 const dataDirectory = path.join(appRoot, "data");
 const configPath = path.join(appRoot, "config", "config.json");
 const listSheetPath = path.join(dataDirectory, "listSheet.json");
+const playlistsPath = path.join(dataDirectory, "playlists.json");
 
 const STORE_TAB = "sky-sheet-store";
-const LOCAL_TABS = new Set(["all-songs", "favorite", "recent-play"]);
+const PLAYLISTS_TAB = "playlists";
+const LOCAL_TABS = new Set(["all-songs", "favorite", "recent-play", PLAYLISTS_TAB]);
 const STORE_SEARCH_DEBOUNCE_MS = 300;
 const MAX_REMOTE_DURATION_MS = 15 * 60 * 1000;
 const MAX_REMOTE_NOTE_COUNT = 20000;
@@ -29,6 +31,10 @@ let config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
 let listSheet = [];
 let listKeys = [];
 let listSheetPayloads = [];
+let playlists = [];
+let activePlaylistId = "";
+let playlistPickerSheetIndex = null;
+let playlistRenameId = "";
 let isPlay = false;
 let maxPCB = 0;
 let loopMode = 0;
@@ -87,13 +93,44 @@ init();
 
 function init() {
 	setupTheme();
+	setupNavigation();
 	setupTabs();
 	setupSearch();
 	setupContentEvents();
+	setupPlaylistPicker();
 	setupPlaybackControls();
 	setupSettingsControls();
 	applyConfigToUI(config);
 	loadLocalSheets();
+}
+
+function setupNavigation() {
+	const toggle = document.getElementById("nav-toggle");
+	const navigation = document.querySelector(".nav-container");
+	if (!toggle || !navigation) return;
+
+	const closeNavigation = () => {
+		body.classList.remove("nav-open");
+		toggle.setAttribute("aria-expanded", "false");
+		toggle.setAttribute("aria-label", "Open navigation");
+	};
+
+	toggle.addEventListener("click", () => {
+		const isOpen = body.classList.toggle("nav-open");
+		toggle.setAttribute("aria-expanded", String(isOpen));
+		toggle.setAttribute("aria-label", isOpen ? "Close navigation" : "Open navigation");
+	});
+
+	document.addEventListener("click", (event) => {
+		if (!body.classList.contains("nav-open")) return;
+		if (!navigation.contains(event.target) && !toggle.contains(event.target)) {
+			closeNavigation();
+		}
+	});
+
+	document.addEventListener("keydown", (event) => {
+		if (event.key === "Escape") closeNavigation();
+	});
 }
 
 function setupTheme() {
@@ -132,6 +169,9 @@ function setupTabs() {
 			const tabType = tab.getAttribute("data-tab");
 			if (!tabType) return;
 			setActiveTab(tabType);
+			body.classList.remove("nav-open");
+			document.getElementById("nav-toggle")?.setAttribute("aria-expanded", "false");
+			document.getElementById("nav-toggle")?.setAttribute("aria-label", "Open navigation");
 		});
 	});
 }
@@ -156,17 +196,306 @@ function setupSearch() {
 	});
 }
 
+function setupPlaylistPicker() {
+	const picker = document.getElementById("playlist-picker");
+	const form = document.getElementById("playlist-create-form");
+	if (!picker || !form) return;
+
+	picker.addEventListener("click", (event) => {
+		if (event.target === picker || event.target.closest("[data-playlist-modal-action=\"close\"]")) {
+			closePlaylistPicker();
+			return;
+		}
+
+		if (event.target.closest(".playlist-picker-dialog")) {
+			event.stopPropagation();
+		}
+
+		const addButton = event.target.closest("[data-playlist-modal-action=\"add\"]");
+		if (addButton) {
+			addSheetToPlaylist(addButton.getAttribute("data-playlist-id"), playlistPickerSheetIndex);
+		}
+	});
+
+	form.addEventListener("submit", (event) => {
+		event.preventDefault();
+		const input = document.getElementById("playlist-name-input");
+		if (playlistRenameId) {
+			const playlist = playlists.find((item) => item.id === playlistRenameId);
+			const name = input.value.trim().slice(0, 80);
+			if (!playlist) return;
+			if (!name || playlists.some((item) => item.id !== playlist.id && item.name.toLowerCase() === name.toLowerCase())) {
+				notie.alert({ type: 2, text: "Enter a unique playlist name." });
+				return;
+			}
+			playlist.name = name;
+			savePlaylists();
+			closePlaylistPicker();
+			renderContent();
+			return;
+		}
+		const playlist = createPlaylist(input?.value || "");
+		if (!playlist) return;
+		if (input) input.value = "";
+		if (Number.isInteger(playlistPickerSheetIndex)) {
+			addSheetToPlaylist(playlist.id, playlistPickerSheetIndex);
+		} else {
+			closePlaylistPicker();
+		}
+		renderContent();
+		renderPlaylistPicker();
+	});
+}
+
+function loadPlaylists() {
+	try {
+		if (!fs.existsSync(playlistsPath)) {
+			playlists = [];
+			return;
+		}
+		const parsed = JSON.parse(fs.readFileSync(playlistsPath, "utf8"));
+		playlists = Array.isArray(parsed) ? parsed
+			.map((playlist) => ({
+				id: typeof playlist?.id === "string" ? playlist.id : "",
+				name: typeof playlist?.name === "string" ? playlist.name.trim().slice(0, 80) : "",
+				sheetKeys: Array.from(new Set(Array.isArray(playlist?.sheetKeys)
+					? playlist.sheetKeys.filter((key) => typeof key === "string" && key)
+					: [])),
+			}))
+			.filter((playlist) => playlist.id && playlist.name)
+			: [];
+	} catch (error) {
+		console.error("Failed to load playlists:", error);
+		playlists = [];
+	}
+}
+
+function savePlaylists() {
+	fs.writeFileSync(playlistsPath, JSON.stringify(playlists, null, 4), { mode: 0o666 });
+}
+
+function createPlaylist(rawName) {
+	const name = String(rawName || "").trim().slice(0, 80);
+	if (!name) {
+		notie.alert({ type: 2, text: "Enter a playlist name." });
+		return null;
+	}
+	if (playlists.some((playlist) => playlist.name.toLowerCase() === name.toLowerCase())) {
+		notie.alert({ type: 2, text: "A playlist with this name already exists." });
+		return null;
+	}
+	const playlist = {
+		id: `playlist-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+		name,
+		sheetKeys: [],
+	};
+	playlists.push(playlist);
+	savePlaylists();
+	return playlist;
+}
+
+function getActivePlaylist() {
+	return playlists.find((playlist) => playlist.id === activePlaylistId) || null;
+}
+
+function getPlaylistSheetIndices(playlist) {
+	if (!playlist) return [];
+	const byKeyMap = new Map(listSheet.map((sheet, index) => [sheet.keyMap, index]));
+	return playlist.sheetKeys.map((keyMap) => byKeyMap.get(keyMap)).filter(Number.isInteger);
+}
+
+function addSheetToPlaylist(playlistId, sheetIndex) {
+	const playlist = playlists.find((item) => item.id === playlistId);
+	const sheet = listSheet[sheetIndex];
+	if (!playlist || !sheet) return;
+	if (playlist.sheetKeys.includes(sheet.keyMap)) {
+		notie.alert({ type: 2, text: "This sheet is already in the playlist." });
+		return;
+	}
+	playlist.sheetKeys.push(sheet.keyMap);
+	savePlaylists();
+	renderPlaylistPicker();
+	notie.alert({ type: 1, text: "Added to playlist." });
+}
+
+function removeSheetFromPlaylist(sheetIndex) {
+	const playlist = getActivePlaylist();
+	const sheet = listSheet[sheetIndex];
+	if (!playlist || !sheet) return;
+	playlist.sheetKeys = playlist.sheetKeys.filter((keyMap) => keyMap !== sheet.keyMap);
+	savePlaylists();
+	renderContent();
+}
+
+function moveSheetInActivePlaylist(sheetIndex, direction) {
+	const playlist = getActivePlaylist();
+	const sheet = listSheet[sheetIndex];
+	if (!playlist || !sheet) return;
+
+	const currentIndex = playlist.sheetKeys.indexOf(sheet.keyMap);
+	const nextIndex = currentIndex + direction;
+	if (currentIndex === -1 || nextIndex < 0 || nextIndex >= playlist.sheetKeys.length) return;
+
+	[playlist.sheetKeys[currentIndex], playlist.sheetKeys[nextIndex]] = [playlist.sheetKeys[nextIndex], playlist.sheetKeys[currentIndex]];
+	savePlaylists();
+	renderContent();
+}
+
+function removeSheetFromPlaylists(sheetKeyMap) {
+	let changed = false;
+	playlists.forEach((playlist) => {
+		const nextKeys = playlist.sheetKeys.filter((keyMap) => keyMap !== sheetKeyMap);
+		if (nextKeys.length !== playlist.sheetKeys.length) {
+			playlist.sheetKeys = nextKeys;
+			changed = true;
+		}
+	});
+	if (changed) savePlaylists();
+}
+
+function openPlaylistPicker(sheetIndex = null, renameId = "") {
+	if (sheetIndex !== null && !listSheet[sheetIndex]) return;
+	playlistPickerSheetIndex = sheetIndex;
+	playlistRenameId = renameId;
+	const playlist = playlists.find((item) => item.id === renameId);
+	document.getElementById("playlist-picker-title").textContent = renameId ? "Rename Playlist" : sheetIndex === null ? "New Playlist" : "Add to Playlist";
+	const input = document.getElementById("playlist-name-input");
+	input.value = playlist?.name || "";
+	document.querySelector("#playlist-create-form button[type=submit]").textContent = renameId ? "Save" : "Create";
+	renderPlaylistPicker();
+	const picker = document.getElementById("playlist-picker");
+	picker?.classList.add("show");
+	picker?.setAttribute("aria-hidden", "false");
+	ipcRenderer.send("set-shortcuts-suspended", true);
+	requestAnimationFrame(() => {
+		input.focus();
+		input.select();
+	});
+}
+
+function closePlaylistPicker() {
+	playlistPickerSheetIndex = null;
+	playlistRenameId = "";
+	const picker = document.getElementById("playlist-picker");
+	picker?.classList.remove("show");
+	picker?.setAttribute("aria-hidden", "true");
+	ipcRenderer.send("set-shortcuts-suspended", false);
+}
+
+function renderPlaylistPicker() {
+	const list = document.getElementById("playlist-picker-list");
+	if (!list) return;
+	const sheet = listSheet[playlistPickerSheetIndex];
+	if (!sheet) {
+		list.innerHTML = "";
+		return;
+	}
+	if (!playlists.length) {
+		list.innerHTML = `<div class="playlist-empty-copy">Create a playlist to add ${escapeHtml(sheet.name)}.</div>`;
+		return;
+	}
+	list.innerHTML = playlists.map((playlist) => {
+		const added = playlist.sheetKeys.includes(sheet.keyMap);
+		return `<div class="playlist-picker-row"><span>${escapeHtml(playlist.name)}</span><button class="store-action-btn" data-playlist-modal-action="add" data-playlist-id="${escapeAttribute(playlist.id)}" ${added ? "disabled" : ""}>${added ? "Added" : "Add"}</button></div>`;
+	}).join("");
+}
+
+function renderPlaylists() {
+	const activePlaylist = getActivePlaylist();
+	if (activePlaylist) {
+		contentContainer.innerHTML = `<section class="playlist-browser"><div class="playlist-toolbar playlist-detail-toolbar"><button class="store-toolbar-btn" data-playlist-action="back">Back</button><div class="playlist-detail-heading"><h2 class="playlist-title">${escapeHtml(activePlaylist.name)}</h2><p class="playlist-subtitle">${getPlaylistSheetIndices(activePlaylist).length} sheets</p></div><span class="playlist-detail-spacer" aria-hidden="true"></span></div></section>`;
+		renderLocalLibrary(getPlaylistSheetIndices(activePlaylist), { preserveContent: true });
+		return;
+	}
+
+	const cards = playlists.map((playlist) => `<article class="playlist-card" data-playlist-action="open" data-playlist-id="${escapeAttribute(playlist.id)}"><div><h3>${escapeHtml(playlist.name)}</h3><p>${getPlaylistSheetIndices(playlist).length} sheets</p></div><div class="playlist-card-actions"><button class="playlist-icon-btn" data-playlist-action="rename" data-playlist-id="${escapeAttribute(playlist.id)}" aria-label="Rename playlist">Rename</button><button class="playlist-icon-btn danger" data-playlist-action="delete" data-playlist-id="${escapeAttribute(playlist.id)}" aria-label="Delete playlist">Delete</button></div></article>`).join("");
+	contentContainer.innerHTML = `<section class="playlist-browser"><div class="playlist-toolbar"><div><h2 class="playlist-title">Playlists</h2></div><button class="store-toolbar-btn" data-playlist-action="create">New Playlist</button></div><div class="playlist-card-list">${cards || `<div class="store-state-card"><div class="store-state-title">No playlists yet.</div><div class="store-state-copy">Create a playlist, then add sheets from your library.</div></div>`}</div></section>`;
+}
+
+function handlePlaylistAction(actionButton) {
+	const action = actionButton.getAttribute("data-playlist-action");
+	const playlistId = actionButton.getAttribute("data-playlist-id");
+	switch (action) {
+		case "open":
+			if (playlistId && playlists.some((playlist) => playlist.id === playlistId)) {
+				activePlaylistId = playlistId;
+				renderContent();
+			}
+			return;
+		case "back":
+			activePlaylistId = "";
+			renderContent();
+			return;
+		case "create": {
+			openPlaylistPicker();
+			return;
+		}
+		case "rename": {
+			const playlist = playlists.find((item) => item.id === playlistId);
+			if (!playlist) return;
+			openPlaylistPicker(null, playlist.id);
+			return;
+		}
+		case "delete":
+			if (!playlistId || !window.confirm("Delete this playlist? Sheets will remain in your library.")) return;
+			playlists = playlists.filter((playlist) => playlist.id !== playlistId);
+			if (activePlaylistId === playlistId) activePlaylistId = "";
+			savePlaylists();
+			renderContent();
+			return;
+		default:
+			return;
+	}
+}
 function setupContentEvents() {
 	contentContainer.addEventListener("click", async (event) => {
+		const clickedActionMenu = event.target.closest(".local-actions-menu");
+		const actionToggle = event.target.closest(".local-actions-toggle");
+		if (actionToggle) {
+			event.preventDefault();
+			const actionMenu = actionToggle.closest(".local-actions-menu");
+			if (!actionMenu) return;
+			const shouldOpen = !actionMenu.classList.contains("open");
+			closeLocalActionMenus();
+			if (shouldOpen) openLocalActionMenu(actionMenu);
+			return;
+		}
+		if (!clickedActionMenu) closeLocalActionMenus();
+
+		const playlistAction = event.target.closest("[data-playlist-action]");
+		if (playlistAction) {
+			event.preventDefault();
+			handlePlaylistAction(playlistAction);
+			return;
+		}
+
 		const localAction = event.target.closest("[data-local-action]");
 		if (localAction) {
 			event.preventDefault();
+			const actionMenu = localAction.closest(".local-actions-menu");
+			if (actionMenu) closeLocalActionMenus();
 			const index = Number(localAction.getAttribute("data-index"));
 			if (!Number.isInteger(index) || index < 0 || index >= listSheet.length) return;
 			const action = localAction.getAttribute("data-local-action");
 			if (action === "favorite") {
 				toggleFavorite(listSheet[index].name);
 				renderContent();
+				return;
+			}
+			if (action === "playlist") {
+				openPlaylistPicker(index);
+				return;
+			}
+			if (action === "playlist-remove") {
+				removeSheetFromPlaylist(index);
+				return;
+			}
+			if (action === "playlist-move-up") {
+				moveSheetInActivePlaylist(index, -1);
+				return;
+			}
+			if (action === "playlist-move-down") {
+				moveSheetInActivePlaylist(index, 1);
 				return;
 			}
 			if (action === "edit") {
@@ -222,6 +551,8 @@ function setupContentEvents() {
 			return;
 		}
 
+		if (clickedActionMenu) return;
+
 		const localCard = event.target.closest("[data-local-card]");
 		if (localCard) {
 			const index = Number(localCard.getAttribute("data-index"));
@@ -230,6 +561,55 @@ function setupContentEvents() {
 			}
 		}
 	});
+
+	window.addEventListener("resize", () => closeLocalActionMenus());
+	window.addEventListener("scroll", () => closeLocalActionMenus(), true);
+}
+
+function closeLocalActionMenus(exceptMenu = null) {
+	contentContainer.querySelectorAll(".local-actions-menu.open").forEach((menu) => {
+		if (menu === exceptMenu) return;
+		menu.classList.remove("open", "open-up", "open-down");
+		const popover = menu.querySelector(".local-actions-popover");
+		if (popover) popover.style.removeProperty("--popover-shift");
+		const card = menu.closest(".card");
+		if (card) card.classList.remove("local-action-card-open");
+	});
+}
+
+function openLocalActionMenu(menu) {
+	const popover = menu.querySelector(".local-actions-popover");
+	const toggle = menu.querySelector(".local-actions-toggle");
+	if (!popover || !toggle) return;
+
+	menu.classList.add("open");
+	const card = menu.closest(".card");
+	if (card) card.classList.add("local-action-card-open");
+
+	popover.style.setProperty("--popover-shift", "0px");
+	menu.classList.remove("open-up", "open-down");
+	menu.classList.add("open-down");
+
+	const toggleRect = toggle.getBoundingClientRect();
+	const popoverRect = popover.getBoundingClientRect();
+	const viewportPadding = 8;
+	const spaceBelow = window.innerHeight - toggleRect.bottom;
+	const spaceAbove = toggleRect.top;
+
+	if (spaceBelow < popoverRect.height + viewportPadding && spaceAbove > spaceBelow) {
+		menu.classList.remove("open-down");
+		menu.classList.add("open-up");
+	}
+
+	const adjustedRect = popover.getBoundingClientRect();
+	let shift = 0;
+	if (adjustedRect.right > window.innerWidth - viewportPadding) {
+		shift -= adjustedRect.right - (window.innerWidth - viewportPadding);
+	}
+	if (adjustedRect.left + shift < viewportPadding) {
+		shift += viewportPadding - (adjustedRect.left + shift);
+	}
+	popover.style.setProperty("--popover-shift", `${Math.round(shift)}px`);
 }
 
 function setupPlaybackControls() {
@@ -241,14 +621,21 @@ function setupPlaybackControls() {
 		updateLiveTime(Number(event.target.value));
 	});
 
-	ipcRenderer.on("btn-prev", btnPrev);
-	ipcRenderer.on("btn-next", btnNext);
-	ipcRenderer.on("btn-play", btnPlay);
+	ipcRenderer.on("btn-prev", () => {
+		if (!shouldIgnoreShortcutEvent()) btnPrev();
+	});
+	ipcRenderer.on("btn-next", () => {
+		if (!shouldIgnoreShortcutEvent()) btnNext();
+	});
+	ipcRenderer.on("btn-play", () => {
+		if (!shouldIgnoreShortcutEvent()) btnPlay();
+	});
 	ipcRenderer.on("process-bar", (_, data) => {
 		document.getElementById("process-bar").value = data;
 		updateLiveTime(Number(data));
 	});
 	ipcRenderer.on("speed-changed", (_, newSpeed) => {
+		if (shouldIgnoreShortcutEvent()) return;
 		document.getElementById("speed-btn").value = newSpeed;
 	});
 	ipcRenderer.on("stop-player", (_, data) => {
@@ -299,6 +686,19 @@ function setupPlaybackControls() {
 		}
 		document.getElementById("process-bar").disabled = false;
 	});
+}
+
+function shouldIgnoreShortcutEvent() {
+	const activeElement = document.activeElement;
+	if (!activeElement) return false;
+	const tagName = activeElement.tagName;
+	return Boolean(
+		document.getElementById("playlist-picker")?.classList.contains("show")
+		|| activeElement.isContentEditable
+		|| tagName === "INPUT"
+		|| tagName === "TEXTAREA"
+		|| tagName === "SELECT",
+	);
 }
 
 function setupSettingsControls() {
@@ -364,6 +764,7 @@ ipcRenderer.on("config-updated", (_, updatedConfig) => {
 });
 
 function loadLocalSheets() {
+	loadPlaylists();
 	fs.readFile(listSheetPath, { encoding: "utf8" }, async (err, data) => {
 		if (err) {
 			fs.writeFile(listSheetPath, JSON.stringify([], null, 4), { mode: 0o666 }, (writeErr) => {
@@ -430,19 +831,35 @@ function renderContent() {
 		renderStoreBrowser();
 		return;
 	}
+	if (activeTab === PLAYLISTS_TAB) {
+		renderPlaylists();
+		return;
+	}
 	renderLocalLibrary();
 }
 
-function renderLocalLibrary() {
+function renderLocalLibrary(sheetIndexes = null, { preserveContent = false } = {}) {
 	const searchTerm = localSearchQuery.toLowerCase().trim();
 	const favorites = getFavorites();
 	const recentPlays = getRecentPlays();
 	const fragment = document.createDocumentFragment();
 
-	contentContainer.innerHTML = "";
+	if (!preserveContent) contentContainer.innerHTML = "";
+	if (activeTab !== PLAYLISTS_TAB) {
+		const header = document.createElement("div");
+		header.className = "library-header";
+		header.innerHTML = `<h2>${getLocalTabTitle()}</h2>`;
+		contentContainer.appendChild(header);
+	}
 
-	listSheet.forEach((sheetData, index) => {
+	const indexes = Array.isArray(sheetIndexes) ? sheetIndexes : listSheet.map((_, index) => index);
+	indexes.forEach((index) => {
+		const sheetData = listSheet[index];
+		if (!sheetData) return;
 		if (!shouldShowLocalSheet(sheetData, searchTerm, favorites, recentPlays)) return;
+		const activePlaylist = getActivePlaylist();
+		const playlistSheetPosition = activePlaylist ? activePlaylist.sheetKeys.indexOf(sheetData.keyMap) : -1;
+		const canMoveInPlaylist = activeTab === PLAYLISTS_TAB && activePlaylistId && playlistSheetPosition !== -1;
 		const card = document.createElement("div");
 		card.className = "card";
 		card.setAttribute("data-local-card", "true");
@@ -472,9 +889,32 @@ function renderLocalLibrary() {
 				</div>
 			</div>
 			<div class="menu-btn local-menu-btn">
-				<svg xmlns="http://www.w3.org/2000/svg" width="25" height="25" class="bi bi-heart favorite-btn ${favorites.includes(sheetData.name) ? "favorited" : ""}" data-local-action="favorite" data-index="${index}" viewBox="0 0 16 16" style="cursor:pointer;" fill="currentColor"><path d="m8 2.748-.717-.737C5.6.281 2.514.878 1.4 3.053c-.523 1.023-.641 2.5.314 4.385.92 1.815 2.834 3.989 6.286 6.357 3.452-2.368 5.365-4.542 6.286-6.357.955-1.886.838-3.362.314-4.385C13.486.878 10.4.28 8.717 2.01L8 2.748zM8 15C-7.333 4.868 3.279-3.04 7.824 1.143c.06.055.119.112.176.171a3.12 3.12 0 0 1 .176-.17C12.72-3.042 23.333 4.867 8 15z"/></svg>
-				<svg xmlns="http://www.w3.org/2000/svg" width="25" height="25" class="bi bi-sheet-editor" data-local-action="edit" data-index="${index}" viewBox="0 0 40 40" style="cursor:pointer;"><path d="M20.8333 36.6667H30C30.884 36.6667 31.7319 36.3155 32.357 35.6903C32.9821 35.0652 33.3333 34.2174 33.3333 33.3333V11.6667L25 3.33333H9.99996C9.1159 3.33333 8.26806 3.68452 7.64294 4.30964C7.01782 4.93476 6.66663 5.78261 6.66663 6.66666V22.5" fill="none" stroke="currentColor" stroke-width="4.16667" stroke-linecap="round" stroke-linejoin="round"/><path d="M23.333 3.33333V9.99999C23.333 10.884 23.6842 11.7319 24.3093 12.357C24.9344 12.9821 25.7822 13.3333 26.6663 13.3333H33.333M22.2963 26.0433C22.625 25.7146 22.8858 25.3243 23.0637 24.8948C23.2416 24.4653 23.3332 24.0049 23.3332 23.54C23.3332 23.0751 23.2416 22.6147 23.0637 22.1852C22.8858 21.7557 22.625 21.3654 22.2963 21.0367C21.9676 20.7079 21.5773 20.4471 21.1478 20.2692C20.7182 20.0913 20.2579 19.9997 19.793 19.9997C19.3281 19.9997 18.8677 20.0913 18.4382 20.2692C18.0087 20.4471 17.6184 20.7079 17.2896 21.0367L8.93964 29.39C8.54338 29.786 8.25334 30.2756 8.0963 30.8133L6.7013 35.5967C6.65947 35.7401 6.65697 35.8921 6.69404 36.0368C6.73112 36.1815 6.80641 36.3136 6.91205 36.4192C7.01768 36.5249 7.14977 36.6002 7.29449 36.6373C7.4392 36.6743 7.59122 36.6718 7.73464 36.63L12.518 35.235C13.0557 35.078 13.5453 34.7879 13.9413 34.3917L22.2963 26.0433Z" fill="none" stroke="currentColor" stroke-width="4.16667" stroke-linecap="round" stroke-linejoin="round"/></svg>
-				<svg xmlns="http://www.w3.org/2000/svg" width="25" height="25" class="bi bi-trash3" data-local-action="delete" data-index="${index}" viewBox="0 0 16 16" style="cursor:pointer;" fill="currentColor"><path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5M11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H2.506a.58.58 0 0 0-.01 0H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1h-.995a.59.59 0 0 0-.01 0zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47ZM8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5"/></svg>
+				<div class="local-actions-menu">
+					<button type="button" class="local-actions-toggle" aria-label="Sheet actions">
+						<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" class="bi bi-three-dots-vertical local-actions-more-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M9.5 13a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0m0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0m0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0"/></svg>
+						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-x local-actions-close-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708"/></svg>
+					</button>
+					<div class="local-actions-popover">
+						<button type="button" class="local-action-item" data-local-action="favorite" data-index="${index}">
+							<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" class="bi bi-heart favorite-btn ${favorites.includes(sheetData.name) ? "favorited" : ""}" viewBox="0 0 16 16" fill="currentColor"><path d="m8 2.748-.717-.737C5.6.281 2.514.878 1.4 3.053c-.523 1.023-.641 2.5.314 4.385.92 1.815 2.834 3.989 6.286 6.357 3.452-2.368 5.365-4.542 6.286-6.357.955-1.886.838-3.362.314-4.385C13.486.878 10.4.28 8.717 2.01L8 2.748zM8 15C-7.333 4.868 3.279-3.04 7.824 1.143c.06.055.119.112.176.171a3.12 3.12 0 0 1 .176-.17C12.72-3.042 23.333 4.867 8 15z"/></svg>
+							<span>${favorites.includes(sheetData.name) ? "Unfavorite" : "Favorite"}</span>
+						</button>
+						<button type="button" class="local-action-item" data-local-action="edit" data-index="${index}">
+							<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" class="bi bi-sheet-editor" viewBox="0 0 40 40"><path d="M20.8333 36.6667H30C30.884 36.6667 31.7319 36.3155 32.357 35.6903C32.9821 35.0652 33.3333 34.2174 33.3333 33.3333V11.6667L25 3.33333H9.99996C9.1159 3.33333 8.26806 3.68452 7.64294 4.30964C7.01782 4.93476 6.66663 5.78261 6.66663 6.66666V22.5" fill="none" stroke="currentColor" stroke-width="4.16667" stroke-linecap="round" stroke-linejoin="round"/><path d="M23.333 3.33333V9.99999C23.333 10.884 23.6842 11.7319 24.3093 12.357C24.9344 12.9821 25.7822 13.3333 26.6663 13.3333H33.333M22.2963 26.0433C22.625 25.7146 22.8858 25.3243 23.0637 24.8948C23.2416 24.4653 23.3332 24.0049 23.3332 23.54C23.3332 23.0751 23.2416 22.6147 23.0637 22.1852C22.8858 21.7557 22.625 21.3654 22.2963 21.0367C21.9676 20.7079 21.5773 20.4471 21.1478 20.2692C20.7182 20.0913 20.2579 19.9997 19.793 19.9997C19.3281 19.9997 18.8677 20.0913 18.4382 20.2692C18.0087 20.4471 17.6184 20.7079 17.2896 21.0367L8.93964 29.39C8.54338 29.786 8.25334 30.2756 8.0963 30.8133L6.7013 35.5967C6.65947 35.7401 6.65697 35.8921 6.69404 36.0368C6.73112 36.1815 6.80641 36.3136 6.91205 36.4192C7.01768 36.5249 7.14977 36.6002 7.29449 36.6373C7.4392 36.6743 7.59122 36.6718 7.73464 36.63L12.518 35.235C13.0557 35.078 13.5453 34.7879 13.9413 34.3917L22.2963 26.0433Z" fill="none" stroke="currentColor" stroke-width="4.16667" stroke-linecap="round" stroke-linejoin="round"/></svg>
+							<span>Edit</span>
+						</button>
+						<button type="button" class="local-action-item" data-local-action="playlist" data-index="${index}">
+							<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" class="bi bi-collection-plus" viewBox="0 0 16 16" fill="currentColor"><path d="M2 3.5A1.5 1.5 0 0 1 3.5 2h7A1.5 1.5 0 0 1 12 3.5v5a.5.5 0 0 1-1 0v-5a.5.5 0 0 0-.5-.5h-7a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .5.5h5a.5.5 0 0 1 0 1h-5A1.5 1.5 0 0 1 2 10.5z"/><path d="M13 10a.5.5 0 0 1 .5.5V12H15a.5.5 0 0 1 0 1h-1.5v1.5a.5.5 0 0 1-1 0V13H11a.5.5 0 0 1 0-1h1.5v-1.5a.5.5 0 0 1 .5-.5"/></svg>
+							<span>Add to playlist</span>
+						</button>
+						${canMoveInPlaylist ? `<button type="button" class="local-action-item" data-local-action="playlist-move-up" data-index="${index}" ${playlistSheetPosition <= 0 ? "disabled" : ""}><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" class="bi bi-arrow-up" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 12a.5.5 0 0 0 .5-.5V5.707l2.146 2.147a.5.5 0 0 0 .708-.708l-3-3a.5.5 0 0 0-.708 0l-3 3a.5.5 0 1 0 .708.708L7.5 5.707V11.5A.5.5 0 0 0 8 12"/></svg><span>Move up</span></button><button type="button" class="local-action-item" data-local-action="playlist-move-down" data-index="${index}" ${playlistSheetPosition >= activePlaylist.sheetKeys.length - 1 ? "disabled" : ""}><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" class="bi bi-arrow-down" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 4a.5.5 0 0 1 .5.5v5.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708-.708L7.5 10.293V4.5A.5.5 0 0 1 8 4"/></svg><span>Move down</span></button>` : ""}
+						${activeTab === PLAYLISTS_TAB && activePlaylistId ? `<button type="button" class="local-action-item" data-local-action="playlist-remove" data-index="${index}"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" class="bi bi-dash-circle" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0m0 1a7 7 0 1 1 0 14A7 7 0 0 1 8 1"/><path d="M4.5 7.5a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1z"/></svg><span>Remove from playlist</span></button>` : ""}
+						<button type="button" class="local-action-item danger" data-local-action="delete" data-index="${index}">
+							<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" class="bi bi-trash3" viewBox="0 0 16 16" fill="currentColor"><path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5M11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H2.506a.58.58 0 0 0-.01 0H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1h-.995a.59.59 0 0 0-.01 0zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47ZM8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5"/></svg>
+							<span>Delete</span>
+						</button>
+					</div>
+				</div>
 			</div>
 		`;
 		fragment.appendChild(card);
@@ -488,6 +928,17 @@ function renderLocalLibrary() {
 	}
 
 	contentContainer.appendChild(fragment);
+}
+
+function getLocalTabTitle() {
+	switch (activeTab) {
+		case "favorite":
+			return "Favorite";
+		case "recent-play":
+			return "Recent Play";
+		default:
+			return "All Songs";
+	}
 }
 
 function renderStoreBrowser() {
@@ -1009,6 +1460,7 @@ function deleteLocalSheet(index) {
 	if (!sheetData) return;
 
 	fs.unlinkSync(path.join(dataDirectory, sheetData.keyMap));
+	removeSheetFromPlaylists(sheetData.keyMap);
 	listSheet.splice(index, 1);
 	listKeys.splice(index, 1);
 	listSheetPayloads.splice(index, 1);

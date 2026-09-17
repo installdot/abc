@@ -10,10 +10,13 @@
   --font-color: #2c3e50;
   --hover-color: #3b83f6;
   
-  --grid-color: rgba(44, 62, 80, 0.1);
+  --grid-color: rgba(100, 116, 139, 0.14);
   --dot-size: 3px;
-  --dot-color: rgba(44, 62, 80, 0.2);
-  --active-color: rgba(44, 62, 80, 0.25);
+  --dot-color: rgba(71, 85, 105, 0.42);
+  --grid-note-color: #2563eb;
+  --grid-note-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18), 0 4px 10px rgba(14, 165, 233, 0.28);
+  --grid-hover-color: rgba(59, 130, 246, 0.18);
+  --active-color: rgba(59, 130, 246, 0.24);
   --edit-bg: rgba(44, 62, 80, 0.1);
   --border-color: #2c3e50;
   --success-color: #27ae60;
@@ -28,6 +31,9 @@ body.dark-mode {
   
   --grid-color: rgba(110, 110, 110, 0.2);
   --dot-color: rgba(255, 255, 255, 0.3);
+  --grid-note-color: rgba(255, 255, 255, 0.8);
+  --grid-note-shadow: none;
+  --grid-hover-color: #588e97;
   --active-color: rgba(110, 110, 110, 0.4);
   --edit-bg: rgba(0, 0, 0, 0.2);
   --border-color: #a8b2d1;

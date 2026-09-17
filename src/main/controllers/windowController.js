@@ -23,6 +23,7 @@ export class WindowController {
 		this.mainWindow = null;
 		this.settingsWindow = null;
 		this.editorWindow = null;
+		this.shortcutsSuspended = false;
 	}
 
 	createMainWindow() {
@@ -73,6 +74,7 @@ export class WindowController {
 	#createThemeAwareBackground() {}
 
 	#registerShortcuts(win) {
+		if (this.shortcutsSuspended) return;
 		globalShortcut.unregisterAll();
 		const shortcuts = this.configService.value.shortcut;
 
@@ -107,6 +109,19 @@ export class WindowController {
 				win.webContents.send("speed-changed", panel.speed);
 			}
 		});
+	}
+
+	suspendShortcuts() {
+		this.shortcutsSuspended = true;
+		globalShortcut.unregisterAll();
+	}
+
+	resumeShortcuts() {
+		this.shortcutsSuspended = false;
+		if (this.settingsWindow && !this.settingsWindow.isDestroyed()) return;
+		if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+			this.#registerShortcuts(this.mainWindow);
+		}
 	}
 
 	#bindUpdateNotification(win) {
