@@ -18,6 +18,21 @@ const marked = require('marked');
 
 // Load current configuration
 var config = JSON.parse(fs.readFileSync(configPath));
+const shortcutFieldIds = [
+	"pre-shortcut-setting",
+	"play-shortcut-setting",
+	"next-shortcut-setting",
+	"increase-speed-shortcut-setting",
+	"decrease-speed-shortcut-setting",
+];
+
+function cloneValue(value) {
+	return JSON.parse(JSON.stringify(value));
+}
+
+function isFiniteNumber(value) {
+	return typeof value === "number" && Number.isFinite(value);
+}
 
 // Configure marked to open links in external browser
 marked.setOptions({
@@ -117,29 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // LOAD SETTINGS
 // -------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
-	// General settings
-	document.getElementById("switch-save-setting").checked = config.panel.autoSave;
-	document.getElementById("switch-minimize-on-play").checked = config.panel.minimizeOnPlay;
-	document.getElementById("playback-mode").value = config.panel.playbackMode || "lite";
-
-	// Keyboard settings
-	let i = 0;
-	for (let dom of document.getElementsByClassName("keys")) {
-		dom.value = config.keyboard.keys[i++];
-	}
-	document.getElementById("switch-custom-keyboard").checked =
-		config.keyboard.customKeyboard;
-
-	// Shortcut settings
-	document.getElementById("pre-shortcut-setting").value = config.shortcut.pre;
-	document.getElementById("play-shortcut-setting").value = config.shortcut.play;
-	document.getElementById("next-shortcut-setting").value = config.shortcut.next;
-	document.getElementById("increase-speed-shortcut-setting").value = config.shortcut.increaseSpeed;
-	document.getElementById("decrease-speed-shortcut-setting").value = config.shortcut.decreaseSpeed;
-
-	// Update settings
-	document.getElementById("switch-block-update").checked =
-		config.update?.blockUpdate ?? false;
+	applyConfigToForm(config);
 		
 	// Add event listener for block updates switch with confirmation dialog
 	document.getElementById("switch-block-update").addEventListener("change", (event) => {
@@ -337,6 +330,298 @@ const keyMap = {
 	"bracketright": "]"
 };
 
+const keyboardKeyAliases = {
+	KeyA: { value: "a", label: "A" },
+	KeyB: { value: "b", label: "B" },
+	KeyC: { value: "c", label: "C" },
+	KeyD: { value: "d", label: "D" },
+	KeyE: { value: "e", label: "E" },
+	KeyF: { value: "f", label: "F" },
+	KeyG: { value: "g", label: "G" },
+	KeyH: { value: "h", label: "H" },
+	KeyI: { value: "i", label: "I" },
+	KeyJ: { value: "j", label: "J" },
+	KeyK: { value: "k", label: "K" },
+	KeyL: { value: "l", label: "L" },
+	KeyM: { value: "m", label: "M" },
+	KeyN: { value: "n", label: "N" },
+	KeyO: { value: "o", label: "O" },
+	KeyP: { value: "p", label: "P" },
+	KeyQ: { value: "q", label: "Q" },
+	KeyR: { value: "r", label: "R" },
+	KeyS: { value: "s", label: "S" },
+	KeyT: { value: "t", label: "T" },
+	KeyU: { value: "u", label: "U" },
+	KeyV: { value: "v", label: "V" },
+	KeyW: { value: "w", label: "W" },
+	KeyX: { value: "x", label: "X" },
+	KeyY: { value: "y", label: "Y" },
+	KeyZ: { value: "z", label: "Z" },
+	Digit0: { value: "0", label: "0" },
+	Digit1: { value: "1", label: "1" },
+	Digit2: { value: "2", label: "2" },
+	Digit3: { value: "3", label: "3" },
+	Digit4: { value: "4", label: "4" },
+	Digit5: { value: "5", label: "5" },
+	Digit6: { value: "6", label: "6" },
+	Digit7: { value: "7", label: "7" },
+	Digit8: { value: "8", label: "8" },
+	Digit9: { value: "9", label: "9" },
+	Numpad0: { value: "num0", label: "N0" },
+	Numpad1: { value: "num1", label: "N1" },
+	Numpad2: { value: "num2", label: "N2" },
+	Numpad3: { value: "num3", label: "N3" },
+	Numpad4: { value: "num4", label: "N4" },
+	Numpad5: { value: "num5", label: "N5" },
+	Numpad6: { value: "num6", label: "N6" },
+	Numpad7: { value: "num7", label: "N7" },
+	Numpad8: { value: "num8", label: "N8" },
+	Numpad9: { value: "num9", label: "N9" },
+	NumpadAdd: { value: "num+", label: "N+" },
+	NumpadSubtract: { value: "num-", label: "N-" },
+	NumpadMultiply: { value: "num*", label: "N*" },
+	NumpadDivide: { value: "num/", label: "N/" },
+	NumpadDecimal: { value: "num.", label: "N." },
+	Space: { value: "space", label: "Spc" },
+	Enter: { value: "enter", label: "Ent" },
+	Escape: { value: "escape", label: "Esc" },
+	Backspace: { value: "backspace", label: "Bksp" },
+	Delete: { value: "delete", label: "Del" },
+	Insert: { value: "insert", label: "Ins" },
+	Home: { value: "home", label: "Home" },
+	End: { value: "end", label: "End" },
+	PageUp: { value: "pageUp", label: "PgU" },
+	PageDown: { value: "pageDown", label: "PgD" },
+	ArrowUp: { value: "up", label: "Up" },
+	ArrowDown: { value: "down", label: "Dn" },
+	ArrowLeft: { value: "left", label: "Lt" },
+	ArrowRight: { value: "right", label: "Rt" },
+	Minus: { value: "-", label: "-" },
+	Equal: { value: "=", label: "=" },
+	BracketLeft: { value: "[", label: "[" },
+	BracketRight: { value: "]", label: "]" },
+	Backslash: { value: "\\", label: "\\" },
+	Semicolon: { value: ";", label: ";" },
+	Quote: { value: "'", label: "'" },
+	Comma: { value: ",", label: "," },
+	Period: { value: ".", label: "." },
+	Slash: { value: "/", label: "/" },
+	Backquote: { value: "`", label: "`" },
+};
+
+const keyboardValueLabels = {
+	space: "Spc",
+	enter: "Ent",
+	escape: "Esc",
+	backspace: "Bksp",
+	delete: "Del",
+	insert: "Ins",
+	home: "Home",
+	end: "End",
+	pageUp: "PgU",
+	pageDown: "PgD",
+	up: "Up",
+	down: "Dn",
+	left: "Lt",
+	right: "Rt",
+	num0: "N0",
+	num1: "N1",
+	num2: "N2",
+	num3: "N3",
+	num4: "N4",
+	num5: "N5",
+	num6: "N6",
+	num7: "N7",
+	num8: "N8",
+	num9: "N9",
+	"num+": "N+",
+	"num-": "N-",
+	"num*": "N*",
+	"num/": "N/",
+	"num.": "N.",
+};
+
+const keyboardLegacyValueAliases = {
+	esc: "escape",
+	pageup: "pageUp",
+	pagedown: "pageDown",
+	numadd: "num+",
+	numsub: "num-",
+	nummult: "num*",
+	numdiv: "num/",
+	numdec: "num.",
+};
+
+function normalizeKeyboardMappingValue(value) {
+	const raw = String(value || "").trim();
+	const lowered = raw.toLowerCase();
+	if (!lowered) return "";
+	if (keyboardLegacyValueAliases[lowered]) return keyboardLegacyValueAliases[lowered];
+	const canonical = Object.keys(keyboardValueLabels).find((key) => key.toLowerCase() === lowered);
+	if (canonical) return canonical;
+	if (lowered.length === 1) return lowered;
+	return raw;
+}
+
+function getKeyboardDisplayLabel(value) {
+	const normalized = normalizeKeyboardMappingValue(value);
+	if (!normalized) return "";
+	if (keyboardValueLabels[normalized]) return keyboardValueLabels[normalized];
+	if (normalized.length === 1) return normalized.toUpperCase();
+	return normalized;
+}
+
+function applyKeyboardInputValue(input, value) {
+	const normalized = normalizeKeyboardMappingValue(value);
+	input.dataset.keyValue = normalized;
+	input.value = getKeyboardDisplayLabel(normalized);
+	input.title = normalized || "";
+}
+
+function resolveKeyboardKeyFromEvent(event) {
+	return keyboardKeyAliases[event.code] || null;
+}
+
+function applyConfigToForm(nextConfig) {
+	document.getElementById("switch-save-setting").checked = Boolean(nextConfig.panel.autoSave);
+	document.getElementById("switch-minimize-on-play").checked = Boolean(nextConfig.panel.minimizeOnPlay);
+	document.getElementById("playback-mode").value = nextConfig.panel.playbackMode || "lite";
+
+	let i = 0;
+	for (const dom of document.getElementsByClassName("keys")) {
+		applyKeyboardInputValue(dom, nextConfig.keyboard.keys[i++]);
+	}
+	document.getElementById("switch-custom-keyboard").checked = Boolean(nextConfig.keyboard.customKeyboard);
+
+	document.getElementById("pre-shortcut-setting").value = nextConfig.shortcut.pre;
+	document.getElementById("play-shortcut-setting").value = nextConfig.shortcut.play;
+	document.getElementById("next-shortcut-setting").value = nextConfig.shortcut.next;
+	document.getElementById("increase-speed-shortcut-setting").value = nextConfig.shortcut.increaseSpeed;
+	document.getElementById("decrease-speed-shortcut-setting").value = nextConfig.shortcut.decreaseSpeed;
+
+	document.getElementById("switch-block-update").checked = Boolean(nextConfig.update?.blockUpdate ?? false);
+}
+
+function buildConfigFromForm() {
+	const nextConfig = cloneValue(config);
+
+	nextConfig.panel.autoSave = document.getElementById("switch-save-setting").checked;
+	nextConfig.panel.minimizeOnPlay = document.getElementById("switch-minimize-on-play").checked;
+	nextConfig.panel.playbackMode = document.getElementById("playback-mode").value;
+
+	let i = 0;
+	for (const dom of document.getElementsByClassName("keys")) {
+		nextConfig.keyboard.keys[i++] = normalizeKeyboardMappingValue(dom.dataset.keyValue || dom.value);
+	}
+	nextConfig.keyboard.customKeyboard = document.getElementById("switch-custom-keyboard").checked;
+
+	nextConfig.shortcut.pre = document.getElementById("pre-shortcut-setting").value.trim();
+	nextConfig.shortcut.play = document.getElementById("play-shortcut-setting").value.trim();
+	nextConfig.shortcut.next = document.getElementById("next-shortcut-setting").value.trim();
+	nextConfig.shortcut.increaseSpeed = document.getElementById("increase-speed-shortcut-setting").value.trim();
+	nextConfig.shortcut.decreaseSpeed = document.getElementById("decrease-speed-shortcut-setting").value.trim();
+
+	nextConfig.update = nextConfig.update || {};
+	nextConfig.update.blockUpdate = document.getElementById("switch-block-update").checked;
+
+	return nextConfig;
+}
+
+function validateShortcutConfig(shortcutConfig) {
+	const seen = new Set();
+	for (const key of Object.keys(shortcutConfig)) {
+		const value = String(shortcutConfig[key] || "").trim();
+		if (!value) {
+			return { ok: false, message: "Unable to save the settings, a shortcut is empty!" };
+		}
+		if (seen.has(value)) {
+			return { ok: false, message: "Unable to save the settings, the shortcut has been duplicated!" };
+		}
+		seen.add(value);
+	}
+	return { ok: true };
+}
+
+function normalizeImportedConfig(importedConfig) {
+	if (!importedConfig || typeof importedConfig !== "object" || Array.isArray(importedConfig)) {
+		throw new Error("The selected settings file is invalid.");
+	}
+
+	const nextConfig = cloneValue(config);
+
+	if (importedConfig.panel && typeof importedConfig.panel === "object" && !Array.isArray(importedConfig.panel)) {
+		const panel = importedConfig.panel;
+		if (typeof panel.longPressMode === "boolean") nextConfig.panel.longPressMode = panel.longPressMode;
+		if (isFiniteNumber(panel.speed) && panel.speed >= 0.1 && panel.speed <= 5) nextConfig.panel.speed = panel.speed;
+		if (isFiniteNumber(panel.delayNext) && panel.delayNext >= 0) nextConfig.panel.delayNext = panel.delayNext;
+		if (typeof panel.autoSave === "boolean") nextConfig.panel.autoSave = panel.autoSave;
+		if (typeof panel.minimizeOnPlay === "boolean") nextConfig.panel.minimizeOnPlay = panel.minimizeOnPlay;
+		if (["lite", "strict"].includes(panel.playbackMode)) nextConfig.panel.playbackMode = panel.playbackMode;
+	}
+
+	if (importedConfig.keyboard && typeof importedConfig.keyboard === "object" && !Array.isArray(importedConfig.keyboard)) {
+		const keyboard = importedConfig.keyboard;
+		if (typeof keyboard.customKeyboard === "boolean") nextConfig.keyboard.customKeyboard = keyboard.customKeyboard;
+		if (Array.isArray(keyboard.keys)) {
+			nextConfig.keyboard.keys = nextConfig.keyboard.keys.map((fallback, index) => {
+				const incoming = keyboard.keys[index];
+				return incoming === undefined ? fallback : normalizeKeyboardMappingValue(incoming) || fallback;
+			});
+		}
+	}
+
+	if (importedConfig.shortcut && typeof importedConfig.shortcut === "object" && !Array.isArray(importedConfig.shortcut)) {
+		const shortcut = importedConfig.shortcut;
+		for (const key of ["pre", "play", "next", "increaseSpeed", "decreaseSpeed"]) {
+			if (typeof shortcut[key] === "string" && shortcut[key].trim()) {
+				nextConfig.shortcut[key] = shortcut[key].trim();
+			}
+		}
+	}
+
+	if (importedConfig.update && typeof importedConfig.update === "object" && !Array.isArray(importedConfig.update)) {
+		if (typeof importedConfig.update.blockUpdate === "boolean") {
+			nextConfig.update.blockUpdate = importedConfig.update.blockUpdate;
+		}
+	}
+
+	if (typeof importedConfig.appTheme === "string" && ["light", "dark"].includes(importedConfig.appTheme)) {
+		nextConfig.appTheme = importedConfig.appTheme;
+	}
+
+	return nextConfig;
+}
+
+function persistConfig(nextConfig, successMessage) {
+	const shortcutValidation = validateShortcutConfig(nextConfig.shortcut);
+	if (!shortcutValidation.ok) {
+		notie.alert({
+			type: 3,
+			text: shortcutValidation.message,
+		});
+		return false;
+	}
+
+	try {
+		fs.writeFileSync(configPath, JSON.stringify(nextConfig, null, 4));
+		config = nextConfig;
+		applyConfigToForm(config);
+		notie.alert({
+			type: 1,
+			text: successMessage,
+		});
+		ipcRenderer.send("changeSetting");
+		return true;
+	} catch (err) {
+		console.log(err);
+		notie.alert({
+			type: 3,
+			text: "Can't save the settings!",
+		});
+		return false;
+	}
+}
+
 // Function to convert shortcut to keysender format
 function convertToKeysenderFormat(shortcut) {
 	return shortcut.split("+").map(key => {
@@ -350,13 +635,18 @@ function convertToKeysenderFormat(shortcut) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-	for (let id of [
-		"pre-shortcut-setting",
-		"play-shortcut-setting",
-		"next-shortcut-setting",
-		"increase-speed-shortcut-setting",
-		"decrease-speed-shortcut-setting",
-	]) {
+	for (const input of document.getElementsByClassName("keys")) {
+		input.readOnly = true;
+		input.addEventListener("keydown", (event) => {
+			const resolved = resolveKeyboardKeyFromEvent(event);
+			if (!resolved) return;
+
+			event.preventDefault();
+			applyKeyboardInputValue(input, resolved.value);
+		});
+	}
+
+	for (let id of shortcutFieldIds) {
 		// Handle key release - format the shortcut string
 		document.getElementById(id).addEventListener("keyup", (data) => {
 			let dom = document.getElementById(id);
@@ -414,56 +704,58 @@ document.addEventListener('DOMContentLoaded', () => {
  */
 document.addEventListener('DOMContentLoaded', () => {
 	document.getElementById("btn-save-setting").addEventListener("click", () => {
-		// Save general settings
-		config.panel.autoSave = document.getElementById("switch-save-setting").checked;
-		config.panel.minimizeOnPlay = document.getElementById("switch-minimize-on-play").checked;
-		config.panel.playbackMode = document.getElementById("playback-mode").value;
+		persistConfig(buildConfigFromForm(), "Settings saved and applied.");
+	});
 
-		// Save keyboard settings
-		let i = 0;
-		for (let dom of document.getElementsByClassName("keys")) {
-			config.keyboard.keys[i++] = dom.value;
-		}
-		config.keyboard.customKeyboard = document.getElementById("switch-custom-keyboard").checked;
-
-		// Save and validate shortcut settings
-		let arrShortcut = [];
-		config.shortcut.pre = document.getElementById("pre-shortcut-setting").value;
-		config.shortcut.play = document.getElementById("play-shortcut-setting").value;
-		config.shortcut.next = document.getElementById("next-shortcut-setting").value;
-		config.shortcut.increaseSpeed = document.getElementById("increase-speed-shortcut-setting").value;
-		config.shortcut.decreaseSpeed = document.getElementById("decrease-speed-shortcut-setting").value;
-
-		// Check for duplicate shortcuts
-		for (let key in config.shortcut) {
-			if (arrShortcut.indexOf(config.shortcut[key]) != -1) {
-				return notie.alert({
-					type: 3,
-					text: "Unable to save the settings, the shortcut has been duplicated!",
-				});
-			}
-			arrShortcut.push(config.shortcut[key]);
-		}
-
-		// Save update settings
-		if (!config.update) {
-			config.update = {};
-		}
-		config.update.blockUpdate = document.getElementById("switch-block-update").checked;
-
-		// Write config to file
-		try {
-			fs.writeFileSync(configPath, JSON.stringify(config, null, 4));
-			notie.alert({
-				type: 1,
-				text: "Settings saved and applied.",
-			});
-			ipcRenderer.send("changeSetting");
-		} catch (err) {
-			console.log(err);
+	document.getElementById("btn-export-setting").addEventListener("click", async () => {
+		const nextConfig = buildConfigFromForm();
+		const shortcutValidation = validateShortcutConfig(nextConfig.shortcut);
+		if (!shortcutValidation.ok) {
 			notie.alert({
 				type: 3,
-				text: "Can't save the settings!",
+				text: shortcutValidation.message,
+			});
+			return;
+		}
+
+		const { filePath, canceled } = await ipcRenderer.invoke("show-settings-export-dialog", {
+			defaultPath: `sky-auto-piano-settings-v${packageJson.version}.json`,
+		});
+		if (canceled || !filePath) return;
+
+		const result = await ipcRenderer.invoke("save-exported-file", {
+			filePath,
+			content: JSON.stringify(nextConfig, null, 4),
+		});
+
+		if (!result?.success) {
+			notie.alert({
+				type: 3,
+				text: result?.error || "Can't export the settings!",
+			});
+			return;
+		}
+
+		notie.alert({
+			type: 1,
+			text: "Settings exported successfully.",
+		});
+	});
+
+	document.getElementById("btn-import-setting").addEventListener("click", async () => {
+		const { canceled, filePaths } = await ipcRenderer.invoke("show-settings-import-dialog");
+		if (canceled || !Array.isArray(filePaths) || !filePaths[0]) return;
+
+		try {
+			const rawContent = fs.readFileSync(filePaths[0], "utf8");
+			const importedConfig = JSON.parse(rawContent);
+			const normalizedConfig = normalizeImportedConfig(importedConfig);
+			persistConfig(normalizedConfig, "Settings imported and applied.");
+		} catch (error) {
+			console.error("Failed to import settings:", error);
+			notie.alert({
+				type: 3,
+				text: "The selected settings file is invalid.",
 			});
 		}
 	});

@@ -1,5 +1,21 @@
 import { getHardware } from "./keysenderAdapter.js";
 
+const keySenderAliases = {
+	esc: "escape",
+	pageup: "pageUp",
+	pagedown: "pageDown",
+	numadd: "num+",
+	numsub: "num-",
+	nummult: "num*",
+	numdiv: "num/",
+	numdec: "num.",
+};
+
+function normalizeKeySenderKey(key) {
+	const normalized = String(key || "").trim();
+	return keySenderAliases[normalized.toLowerCase()] || normalized;
+}
+
 export class AutoPlayService {
 	constructor(configService, vncTcpService = null) {
 		this.configService = configService;
@@ -59,7 +75,7 @@ export class AutoPlayService {
 			return rawKey;
 		}
 
-		return this.keyboard.keys[mappedIndex] ?? rawKey;
+		return normalizeKeySenderKey(this.keyboard.keys[mappedIndex] ?? rawKey);
 	}
 
 	_sleep(ms) {
@@ -135,11 +151,102 @@ export class AutoPlayService {
 		const steps = this._getSteps(data.keys);
 		const totalDuration = steps.length > 0 ? steps[steps.length - 1] : Number(data.sec || 0) * 1000;
 
-		this._autoPlay(data.keys, this.state.sessionId, Number(data.sec || 0));
+		this._autoPlay(data.keys, Array.isArray(data.notes) ? data.notes : null, this.state.sessionId, Number(data.sec || 0));
 		this._sendTimeProcess(totalDuration, Number(data.sec || 0), this.state.sessionId);
 	}
 
-	async _autoPlay(keyMap, sessionId, startSec) {
+	_getPlaybackNotes(notes) {
+		if (!Array.isArray(notes) || !notes.length) {
+			return [];
+		}
+
+		return notes
+			.map((note) => {
+				const time = Number(note?.time);
+				const key = typeof note?.key === "string" ? note.key.trim() : "";
+				const hold = Number(note?.hold);
+				if (!Number.isFinite(time) || time < 0 || !key) {
+					return null;
+				}
+				return {
+					time: Math.trunc(time),
+					key,
+					hold: Number.isFinite(hold) && hold > 0 ? Math.trunc(hold) : 0,
+				};
+			})
+			.filter(Boolean)
+			.sort((a, b) => a.time - b.time || a.key.localeCompare(b.key));
+	}
+
+	_getStepDurations(notes, delayNextMs) {
+		const steps = [...new Set(notes.map((note) => note.time))].sort((a, b) => a - b);
+		const durations = new Map();
+		for (let i = 0; i < steps.length; i++) {
+			const currentStep = steps[i];
+			const nextStep = steps[i + 1];
+			durations.set(currentStep, nextStep ? nextStep - currentStep : delayNextMs);
+		}
+		return durations;
+	}
+
+	_buildNoteTimeline(notes, startMs, keysID, longPressMode, delayNextMs, syncCalibration) {
+		const minPressTimeSong = 25;
+		const releaseTrimSong = 35;
+		const chordDelayStep = 3;
+		const stepDurations = this._getStepDurations(notes, delayNextMs);
+		const timeline = [];
+		const chordOffsets = new Map();
+
+		for (const note of notes) {
+			const outputKey = this._resolveOutputKey(note.key, keysID);
+			if (!outputKey) continue;
+
+			let noteStartMs = note.time;
+			let holdMs = note.hold;
+
+			if (noteStartMs < startMs) {
+				if (!(longPressMode && holdMs > 0 && noteStartMs + holdMs > startMs)) {
+					continue;
+				}
+				holdMs = noteStartMs + holdMs - startMs;
+				noteStartMs = startMs;
+			}
+
+			let pressTimeSong = minPressTimeSong;
+			if (longPressMode) {
+				if (holdMs > 0) {
+					pressTimeSong = Math.max(minPressTimeSong, holdMs * syncCalibration - releaseTrimSong);
+				} else {
+					const fallbackHoldMs = stepDurations.get(note.time) ?? delayNextMs;
+					pressTimeSong = Math.max(minPressTimeSong, fallbackHoldMs * syncCalibration - releaseTrimSong);
+				}
+			}
+
+			const chordKey = `${noteStartMs}`;
+			const chordDelay = chordOffsets.get(chordKey) || 0;
+			chordOffsets.set(chordKey, chordDelay + chordDelayStep);
+
+			const songTime = noteStartMs * syncCalibration + chordDelay;
+			timeline.push({ songTime, key: outputKey, type: true });
+			timeline.push({ songTime: songTime + pressTimeSong, key: outputKey, type: false });
+		}
+
+		timeline.sort((a, b) => {
+			if (a.songTime === b.songTime) {
+				return a.type === b.type ? 0 : (a.type ? 1 : -1);
+			}
+			return a.songTime - b.songTime;
+		});
+
+		return timeline;
+	}
+
+	async _autoPlay(keyMap, notes, sessionId, startSec) {
+		if (typeof notes === "string" && typeof sessionId === "number" && startSec === undefined) {
+			startSec = sessionId;
+			sessionId = notes;
+			notes = null;
+		}
 		const keysID = {
 			y: 0, u: 1, i: 2, o: 3, p: 4, h: 5, j: 6, k: 7,
 			l: 8, ";": 9, n: 10, m: 11, ",": 12, ".": 13, "/": 14
@@ -155,10 +262,10 @@ export class AutoPlayService {
 		const syncCalibration = 1.003; // Audio sync calibration tuned from playback testing.
 		const startSongTime = startMs * syncCalibration;
 
-		const timeline = [];
+		const playbackNotes = this._getPlaybackNotes(notes);
 		const steps = this._getSteps(keyMap);
 
-		if (steps.length === 0) {
+		if (steps.length === 0 && playbackNotes.length === 0) {
 			this.state.isPlaying = false;
 			if (this.mainWindow && !this.mainWindow.isDestroyed()) {
 				this.mainWindow.webContents.send("stop-player", { manualStop: false });
@@ -166,34 +273,40 @@ export class AutoPlayService {
 			return;
 		}
 
-		for (let i = 0; i < steps.length; i++) {
-			const currentStep = steps[i];
-			if (currentStep < startMs) continue;
+		const timeline = playbackNotes.length
+			? this._buildNoteTimeline(playbackNotes, startMs, keysID, longPressMode, delayNextMs, syncCalibration)
+			: [];
 
-			const targetSongTime = currentStep * syncCalibration;
+		if (!playbackNotes.length) {
+			for (let i = 0; i < steps.length; i++) {
+				const currentStep = steps[i];
+				if (currentStep < startMs) continue;
 
-			let longPressSong = delayNextMs;
-			if (i < steps.length - 1) {
-				longPressSong = (steps[i + 1] - currentStep) * syncCalibration;
-			}
+				const targetSongTime = currentStep * syncCalibration;
 
-			let chordDelay = 0;
-
-			const keysForStep = Array.isArray(keyMap[currentStep]) ? keyMap[currentStep] : [];
-			for (const key of keysForStep) {
-				const outputKey = this._resolveOutputKey(key, keysID);
-
-				let pressTimeSong = minPressTimeSong;
-				if (longPressMode) {
-					pressTimeSong = Math.max(minPressTimeSong, longPressSong - releaseTrimSong);
+				let longPressSong = delayNextMs;
+				if (i < steps.length - 1) {
+					longPressSong = (steps[i + 1] - currentStep) * syncCalibration;
 				}
 
-				const finalSongTime = targetSongTime + chordDelay;
+				let chordDelay = 0;
 
-				timeline.push({ songTime: finalSongTime, key: outputKey, type: true });
-				timeline.push({ songTime: finalSongTime + pressTimeSong, key: outputKey, type: false });
+				const keysForStep = Array.isArray(keyMap[currentStep]) ? keyMap[currentStep] : [];
+				for (const key of keysForStep) {
+					const outputKey = this._resolveOutputKey(key, keysID);
 
-				chordDelay += chordDelayStep;
+					let pressTimeSong = minPressTimeSong;
+					if (longPressMode) {
+						pressTimeSong = Math.max(minPressTimeSong, longPressSong - releaseTrimSong);
+					}
+
+					const finalSongTime = targetSongTime + chordDelay;
+
+					timeline.push({ songTime: finalSongTime, key: outputKey, type: true });
+					timeline.push({ songTime: finalSongTime + pressTimeSong, key: outputKey, type: false });
+
+					chordDelay += chordDelayStep;
+				}
 			}
 		}
 

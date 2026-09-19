@@ -205,6 +205,15 @@ body {
     margin-bottom: 20px;
     padding-bottom: 15px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.tab-header-copy {
+    min-width: 0;
 }
 
 .tab-header h2 {
@@ -225,6 +234,63 @@ body {
     color: rgba(255, 255, 255, 0.7);
     font-size: 16px;
     line-height: 1.5;
+}
+
+.tab-header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.header-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 18px;
+    border: none;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--hover-color), #4a90e2);
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 6px 20px rgba(74, 144, 226, 0.22);
+}
+
+.header-action-btn.secondary {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: none;
+}
+
+.header-action-btn:hover {
+    transform: translateY(-2px);
+}
+
+.header-action-btn.secondary:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+body:not(.dark-mode) .header-action-btn.secondary {
+    background: #e2e8f0;
+    border-color: #cbd5e1;
+    color: #334155;
+}
+
+body:not(.dark-mode) .header-action-btn.secondary:hover {
+    background: #cbd5e1;
+}
+
+.header-action-btn i,
+.header-action-btn span {
+    color: inherit;
+}
+
+.setting-control .header-action-btn {
+    text-decoration: none;
+    white-space: nowrap;
 }
 
 /* -------------------------------------
@@ -842,15 +908,17 @@ body.dark-mode .block-updates-dialog .dialog-btn.confirm-btn span {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 25px;
+    width: 38px;
+    min-width: 38px;
     height: 25px;
     text-align: center;
     background: transparent;
     border: none;
     color: var(--font-color);
-    font-size: 16px;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
+    letter-spacing: 0;
     outline: none;
 }
 
@@ -1541,4 +1609,56 @@ body.dark-mode .bi-sliders { color: #fbbf24; }
 body.dark-mode .bi-lightning { color: #fb7185; }
 body.dark-mode .bi-arrow-clockwise { color: #38bdf8; }
 body.dark-mode .bi-shield-exclamation { color: #f87171; }
+
+/* Keep Settings version labels static. The main app update prompt still owns its animated version badge. */
+body .settings-container .version-info,
+body .settings-container .version-info:hover,
+body .settings-container .version-info:active {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+    cursor: default !important;
+}
+
+body .settings-container .version-info::before,
+body .settings-container .version-info:hover::before {
+    display: none !important;
+    content: none !important;
+    left: auto !important;
+    transition: none !important;
+}
+
+body .sidebar-header .version-info,
+body .sidebar-header .version-info:hover,
+body .sidebar-header .version-info:active {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    filter: none !important;
+    opacity: 1 !important;
+    pointer-events: none !important;
+}
+
+body > .update-prompt .version-info,
+body > .update-prompt .version-info:hover,
+body > .update-prompt .version-info:active {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.05)) !important;
+    border-color: rgba(255, 255, 255, 0.25) !important;
+    box-shadow:
+        0 4px 15px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+    pointer-events: none !important;
+}
+
+body > .update-prompt .version-info::before,
+body > .update-prompt .version-info:hover::before {
+    display: none !important;
+    content: none !important;
+    left: auto !important;
+    transition: none !important;
+}
   

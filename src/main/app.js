@@ -10,6 +10,7 @@ import { ConfigService } from "./services/configService.js";
 import { AutoPlayService } from "./services/autoPlayService.js";
 import { UpdateService } from "./services/updateService.js";
 import { VncTcpService } from "./services/vncTcpService.js";
+import { SkySheetStoreService } from "./services/skySheetStoreService.js";
 import { registerIpcHandlers } from "./ipc/registerIpcHandlers.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -29,9 +30,10 @@ const configService = new ConfigService(appDirectory);
 const vncTcpService = new VncTcpService(configService);
 const autoPlayService = new AutoPlayService(configService, vncTcpService);
 const updateService = new UpdateService(appDirectory, configService);
+const skySheetStoreService = new SkySheetStoreService();
 const windowController = new WindowController(appDirectory, configService, autoPlayService, updateService);
 
-registerIpcHandlers({ windowController, configService, autoPlayService, updateService, vncTcpService });
+registerIpcHandlers({ windowController, configService, autoPlayService, updateService, skySheetStoreService, vncTcpService });
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {

@@ -9,9 +9,10 @@ import { ipcMain, dialog } from "electron/main";
  * @param {import("../services/configService.js").ConfigService} deps.configService
  * @param {import("../services/autoPlayService.js").AutoPlayService} deps.autoPlayService
  * @param {import("../services/updateService.js").UpdateService} deps.updateService
+ * @param {import("../services/skySheetStoreService.js").SkySheetStoreService} deps.skySheetStoreService
  * @param {import("../services/vncTcpService.js").VncTcpService} deps.vncTcpService
  */
-export function registerIpcHandlers({ windowController, configService, autoPlayService, updateService, vncTcpService }) {
+export function registerIpcHandlers({ windowController, configService, autoPlayService, updateService, skySheetStoreService, vncTcpService }) {
 	const appDirectory = windowController.appDirectory;
 	const broadcastVncTcpState = (state) => {
 		for (const win of [windowController.mainWindow, windowController.settingsWindow, windowController.editorWindow]) {
@@ -127,6 +128,14 @@ export function registerIpcHandlers({ windowController, configService, autoPlayS
 		return configService.value.vncBindings;
 	});
 
+	ipcMain.on("set-shortcuts-suspended", (_, suspended) => {
+		if (suspended) {
+			windowController.suspendShortcuts();
+			return;
+		}
+		windowController.resumeShortcuts();
+	});
+
 	ipcMain.on("check-update", async (event) => {
 		try {
 			const info = await updateService.getVersionInfo();
@@ -207,4 +216,63 @@ export function registerIpcHandlers({ windowController, configService, autoPlayS
 			return { success: false, error: error.message };
 		}
 	});
+
+	ipcMain.handle("show-settings-export-dialog", async (_, args = {}) => {
+		const win = windowController.settingWindow ?? windowController.mainWindow;
+		return dialog.showSaveDialog(win, {
+			defaultPath: args.defaultPath,
+			filters: [{ name: "JSON File", extensions: ["json"] }],
+		});
+	});
+
+	ipcMain.handle("show-settings-import-dialog", async () => {
+		const win = windowController.settingWindow ?? windowController.mainWindow;
+		return dialog.showOpenDialog(win, {
+			properties: ["openFile"],
+			filters: [{ name: "JSON File", extensions: ["json"] }],
+		});
+	});
+
+	ipcMain.handle("sky-sheet-store:list", async (_, args = {}) => {
+		try {
+			return await skySheetStoreService.listSheets(args);
+		} catch (error) {
+			console.error("IPC", "Failed to list Sky Sheet Store sheets", error);
+			throw normalizeIpcError(error, "Unable to connect to Sky Sheet Store.");
+		}
+	});
+
+	ipcMain.handle("sky-sheet-store:get-player-sheet", async (_, { id, sourceType }) => {
+		try {
+			return await skySheetStoreService.getPlayerSheet(id, sourceType);
+		} catch (error) {
+			console.error("IPC", "Failed to fetch Sky Sheet Store player sheet", error);
+			throw normalizeIpcError(error, "Unable to load this sheet. Please try again.");
+		}
+	});
+
+	ipcMain.handle("sky-sheet-store:record-player-start", async (_, { id, sourceType }) => {
+		try {
+			return await skySheetStoreService.recordPlayerStart(id, sourceType);
+		} catch (error) {
+			console.warn("IPC", "Failed to record Sky Sheet Store player start", error);
+			return { tracked: false, reason: error?.code || "track_player_start_failed" };
+		}
+	});
+
+	ipcMain.handle("sky-sheet-store:record-download", async (_, { id, sourceType }) => {
+		try {
+			return await skySheetStoreService.recordDownload(id, sourceType);
+		} catch (error) {
+			console.warn("IPC", "Failed to record Sky Sheet Store download", error);
+			return { tracked: false, reason: error?.code || "track_download_failed" };
+		}
+	});
+}
+
+function normalizeIpcError(error, fallbackMessage) {
+	const normalized = new Error(error?.message || fallbackMessage);
+	normalized.code = error?.code || "unknown_error";
+	normalized.status = error?.status || 500;
+	return normalized;
 }

@@ -52,8 +52,20 @@
             <!-- General Tab -->
             <div id="general" class="tab-content active">
                 <div class="tab-header">
-                    <h2><i class="bi bi-sliders"></i> General Settings</h2>
-                    <p>Configure basic application behavior and preferences</p>
+                    <div class="tab-header-copy">
+                        <h2><i class="bi bi-sliders"></i> General Settings</h2>
+                        <p>Configure basic application behavior and preferences</p>
+                    </div>
+                    <div class="tab-header-actions">
+                        <button type="button" id="btn-import-setting" class="header-action-btn secondary">
+                            <i class="bi bi-upload"></i>
+                            <span>Import</span>
+                        </button>
+                        <button type="button" id="btn-export-setting" class="header-action-btn">
+                            <i class="bi bi-download"></i>
+                            <span>Export</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="settings-grid">
@@ -129,39 +141,39 @@
                     <div class="keyboard-layout">
                         <table>
                             <tr>
-                                <td><span class="key square circle"><input class="keys" maxlength="1" type="text"
+                                <td><span class="key square circle"><input class="keys" type="text"
                                             value="c"></span></td>
-                                <td><span class="key square"><input class="keys" maxlength="1" type="text"
+                                <td><span class="key square"><input class="keys" type="text"
                                             value="d"></span></td>
-                                <td><span class="key circle"><input class="keys" maxlength="1" type="text"
+                                <td><span class="key circle"><input class="keys" type="text"
                                             value="e"></span></td>
-                                <td><span class="key square"><input class="keys" maxlength="1" type="text"
+                                <td><span class="key square"><input class="keys" type="text"
                                             value="f"></span></td>
-                                <td><span class="key circle"><input class="keys" maxlength="1" type="text"
+                                <td><span class="key circle"><input class="keys" type="text"
                                             value="g"></span></td>
                             </tr>
                             <tr>
-                                <td><span class="key circle"><input class="keys" maxlength="1" type="text"
+                                <td><span class="key circle"><input class="keys" type="text"
                                             value="c"></span></td>
-                                <td><span class="key square"><input class="keys" maxlength="1" type="text"
+                                <td><span class="key square"><input class="keys" type="text"
                                             value="d"></span></td>
-                                <td><span class="key square circle"><input class="keys" maxlength="1" type="text"
+                                <td><span class="key square circle"><input class="keys" type="text"
                                             value="e"></span></td>
-                                <td><span class="key square"><input class="keys" maxlength="1" type="text"
+                                <td><span class="key square"><input class="keys" type="text"
                                             value="f"></span></td>
-                                <td><span class="key circle"><input class="keys" maxlength="1" type="text"
+                                <td><span class="key circle"><input class="keys" type="text"
                                             value="g"></span></td>
                             </tr>
                             <tr>
-                                <td><span class="key circle"><input class="keys" maxlength="1" type="text"
+                                <td><span class="key circle"><input class="keys" type="text"
                                             value="c"></span></td>
-                                <td><span class="key square"><input class="keys" maxlength="1" type="text"
+                                <td><span class="key square"><input class="keys" type="text"
                                             value="d"></span></td>
-                                <td><span class="key circle"><input class="keys" maxlength="1" type="text"
+                                <td><span class="key circle"><input class="keys" type="text"
                                             value="e"></span></td>
-                                <td><span class="key square"><input class="keys" maxlength="1" type="text"
+                                <td><span class="key square"><input class="keys" type="text"
                                             value="f"></span></td>
-                                <td><span class="key square circle"><input class="keys" maxlength="1" type="text"
+                                <td><span class="key square circle"><input class="keys" type="text"
                                             value="g"></span></td>
                             </tr>
                         </table>
@@ -292,6 +304,26 @@
 
                     <div class="update-status">
                         <span id="update-message" class="update-message"></span>
+                    </div>
+                </div>
+
+                <div class="settings-grid">
+                    <div class="setting-card">
+                        <div class="setting-info">
+                            <div class="setting-icon">
+                                <i class="bi bi-discord"></i>
+                            </div>
+                            <div class="setting-details">
+                                <h3>Community & Bug Reports</h3>
+                                <p>Join the Discord server to report bugs and connect with other users</p>
+                            </div>
+                        </div>
+                        <div class="setting-control">
+                            <a class="header-action-btn" href="https://discord.gg/Mu8RS9FZky">
+                                <i class="bi bi-box-arrow-up-right"></i>
+                                <span>Join Discord</span>
+                            </a>
+                        </div>
                     </div>
                 </div>
             </div>
