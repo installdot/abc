@@ -486,6 +486,10 @@ function applyConfigToForm(nextConfig) {
 	document.getElementById("switch-save-setting").checked = Boolean(nextConfig.panel.autoSave);
 	document.getElementById("switch-minimize-on-play").checked = Boolean(nextConfig.panel.minimizeOnPlay);
 	document.getElementById("playback-mode").value = nextConfig.panel.playbackMode || "lite";
+	const sendTouchSwitch = document.getElementById("switch-send-touch");
+	if (sendTouchSwitch) {
+		sendTouchSwitch.checked = nextConfig.vncTcp?.sendTouchPoint !== false;
+	}
 
 	let i = 0;
 	for (const dom of document.getElementsByClassName("keys")) {
@@ -508,6 +512,11 @@ function buildConfigFromForm() {
 	nextConfig.panel.autoSave = document.getElementById("switch-save-setting").checked;
 	nextConfig.panel.minimizeOnPlay = document.getElementById("switch-minimize-on-play").checked;
 	nextConfig.panel.playbackMode = document.getElementById("playback-mode").value;
+	const sendTouchSwitch = document.getElementById("switch-send-touch");
+	if (sendTouchSwitch) {
+		nextConfig.vncTcp = nextConfig.vncTcp || {};
+		nextConfig.vncTcp.sendTouchPoint = sendTouchSwitch.checked;
+	}
 
 	let i = 0;
 	for (const dom of document.getElementsByClassName("keys")) {

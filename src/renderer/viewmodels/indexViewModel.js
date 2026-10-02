@@ -82,6 +82,8 @@ const tcpTapDelayInput = document.getElementById("tcp-tap-delay");
 const tcpScanPortButton = document.getElementById("tcp-scan-port");
 const tcpModeSwitch = document.getElementById("tcp-mode-switch");
 const tcpModeLabel = document.getElementById("tcp-mode-label");
+const footerModeSwitch = document.getElementById("footer-mode-switch");
+const footerModeText = document.getElementById("footer-mode-text");
 const tcpStartButton = document.getElementById("tcp-start");
 const tcpStopButton = document.getElementById("tcp-stop");
 const tcpStatusBadge = document.getElementById("tcp-status");
@@ -2790,11 +2792,15 @@ function renderVncTcpState(state = {}) {
 	if (tcpTapDelayInput && state.tapDelayMs && document.activeElement !== tcpTapDelayInput) {
 		tcpTapDelayInput.value = state.tapDelayMs;
 	}
-	if (tcpModeSwitch && typeof state.sendTouchPoint === "boolean") {
-		tcpModeSwitch.checked = state.sendTouchPoint;
+	if (typeof state.sendTouchPoint === "boolean") {
+		if (tcpModeSwitch) tcpModeSwitch.checked = state.sendTouchPoint;
+		if (footerModeSwitch) footerModeSwitch.checked = state.sendTouchPoint;
 	}
 	if (tcpModeLabel) {
 		tcpModeLabel.textContent = tcpModeSwitch?.checked ? "Touch Point" : "Key Press";
+	}
+	if (footerModeText) {
+		footerModeText.textContent = footerModeSwitch?.checked ? "Touch: " : "Key: ";
 	}
 	if (tcpStatusBadge) {
 		tcpStatusBadge.className = `tcp-status ${status}`;
@@ -2965,12 +2971,13 @@ function setupVncTcpControls() {
 		});
 	}
 
-	tcpModeSwitch?.addEventListener("change", () => {
-		if (tcpModeLabel) {
-			tcpModeLabel.textContent = tcpModeSwitch.checked ? "Touch Point" : "Key Press";
-		}
-		const mode = tcpModeSwitch.checked ? "Touch Point" : "Key Press";
-		appendTcpLog(`Output mode changed to ${mode}`);
+	const onModeToggle = (sourceCheckbox) => {
+		const isTouch = sourceCheckbox.checked;
+		if (tcpModeSwitch && tcpModeSwitch !== sourceCheckbox) tcpModeSwitch.checked = isTouch;
+		if (footerModeSwitch && footerModeSwitch !== sourceCheckbox) footerModeSwitch.checked = isTouch;
+		if (tcpModeLabel) tcpModeLabel.textContent = isTouch ? "Touch Point" : "Key Press";
+		if (footerModeText) footerModeText.textContent = isTouch ? "Touch: " : "Key: ";
+		appendTcpLog(`Output mode changed to ${isTouch ? "Touch Point" : "Key Press"}`);
 		saveVncTcpSettings(vncTcpState?.enabled === true).catch((error) => {
 			renderVncTcpState({
 				...vncTcpState,
@@ -2978,7 +2985,10 @@ function setupVncTcpControls() {
 				message: error.message,
 			});
 		});
-	});
+	};
+
+	tcpModeSwitch?.addEventListener("change", () => onModeToggle(tcpModeSwitch));
+	footerModeSwitch?.addEventListener("change", () => onModeToggle(footerModeSwitch));
 
 	tcpScanPortButton?.addEventListener("click", async () => {
 		const host = tcpHostInput?.value?.trim() || "192.168.1.6";
