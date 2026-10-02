@@ -79,6 +79,9 @@ const tcpPanel = document.getElementById("tcp-panel");
 const tcpHostInput = document.getElementById("tcp-host");
 const tcpPortInput = document.getElementById("tcp-port");
 const tcpTapDelayInput = document.getElementById("tcp-tap-delay");
+const tcpScanPortButton = document.getElementById("tcp-scan-port");
+const tcpModeSwitch = document.getElementById("tcp-mode-switch");
+const tcpModeLabel = document.getElementById("tcp-mode-label");
 const tcpStartButton = document.getElementById("tcp-start");
 const tcpStopButton = document.getElementById("tcp-stop");
 const tcpStatusBadge = document.getElementById("tcp-status");
@@ -2759,13 +2762,15 @@ function getTcpSettingsFromForm() {
 		tcpTapDelayInput.value = tapDelayMs;
 	}
 
+	const sendTouchPoint = tcpModeSwitch ? tcpModeSwitch.checked : (vncTcpState?.sendTouchPoint !== false);
+
 	return {
 		host: rawHost,
 		port,
 		tapDelayMs,
+		sendTouchPoint,
 	};
 }
-
 function renderVncTcpState(state = {}) {
 	vncTcpState = state;
 	const status = state.status || "disconnected";
@@ -2784,6 +2789,12 @@ function renderVncTcpState(state = {}) {
 	}
 	if (tcpTapDelayInput && state.tapDelayMs && document.activeElement !== tcpTapDelayInput) {
 		tcpTapDelayInput.value = state.tapDelayMs;
+	}
+	if (tcpModeSwitch && typeof state.sendTouchPoint === "boolean") {
+		tcpModeSwitch.checked = state.sendTouchPoint;
+	}
+	if (tcpModeLabel) {
+		tcpModeLabel.textContent = tcpModeSwitch?.checked ? "Touch Point" : "Key Press";
 	}
 	if (tcpStatusBadge) {
 		tcpStatusBadge.className = `tcp-status ${status}`;
@@ -2953,4 +2964,57 @@ function setupVncTcpControls() {
 			});
 		});
 	}
+
+	tcpModeSwitch?.addEventListener("change", () => {
+		if (tcpModeLabel) {
+			tcpModeLabel.textContent = tcpModeSwitch.checked ? "Touch Point" : "Key Press";
+		}
+		const mode = tcpModeSwitch.checked ? "Touch Point" : "Key Press";
+		appendTcpLog(`Output mode changed to ${mode}`);
+		saveVncTcpSettings(vncTcpState?.enabled === true).catch((error) => {
+			renderVncTcpState({
+				...vncTcpState,
+				status: "error",
+				message: error.message,
+			});
+		});
+	});
+
+	tcpScanPortButton?.addEventListener("click", async () => {
+		const host = tcpHostInput?.value?.trim() || "192.168.1.6";
+		tcpScanPortButton.disabled = true;
+		const originalText = tcpScanPortButton.textContent;
+		tcpScanPortButton.textContent = "...";
+		appendTcpLog(`Scanning for open ports on ${host}...`);
+
+		try {
+			const res = await ipcRenderer.invoke("vnc-tcp-scan-port", { host });
+			if (res?.success && res?.port) {
+				if (tcpPortInput) {
+					tcpPortInput.value = res.port;
+				}
+				appendTcpLog(`Detected open port ${res.port} on ${host}`, "success");
+				notie.alert({
+					type: 1,
+					text: `Detected open port: ${res.port}`,
+				});
+				await saveVncTcpSettings(vncTcpState?.enabled === true);
+			} else {
+				appendTcpLog(`No open ports found on ${host}`, "error");
+				notie.alert({
+					type: 2,
+					text: `No open port detected on ${host}. Check device connection.`,
+				});
+			}
+		} catch (err) {
+			appendTcpLog(`Port scan failed: ${err.message}`, "error");
+			notie.alert({
+				type: 3,
+				text: `Scan error: ${err.message}`,
+			});
+		} finally {
+			tcpScanPortButton.disabled = false;
+			tcpScanPortButton.textContent = originalText;
+		}
+	});
 }

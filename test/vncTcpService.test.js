@@ -1,5 +1,6 @@
 import { jest } from "@jest/globals";
-import { createRfbKeyEvent, keyToKeysym, normalizeVncTcpConfig, VncTcpService } from "../src/main/services/vncTcpService.js";
+import net from "node:net";
+import { createRfbKeyEvent, keyToKeysym, normalizeVncTcpConfig, scanOpenPort, VncTcpService } from "../src/main/services/vncTcpService.js";
 
 function createConnectedService() {
 	const configService = {
@@ -35,6 +36,8 @@ describe("VncTcpService helpers", () => {
 		expect(keyToKeysym("Enter")).toBe(0xff0d);
 		expect(keyToKeysym("ArrowUp")).toBe(0xff52);
 		expect(keyToKeysym("F12")).toBe(0xffc9);
+		expect(keyToKeysym("numpad0")).toBe(0xffb0);
+		expect(keyToKeysym("num+")).toBe(0xffab);
 		expect(keyToKeysym("not-a-key")).toBeNull();
 	});
 
@@ -49,12 +52,14 @@ describe("VncTcpService helpers", () => {
 			port: 5902,
 			enabled: true,
 			tapDelayMs: 12,
+			sendTouchPoint: true,
 		});
-		expect(normalizeVncTcpConfig({ host: "", port: "bad", enabled: "yes" })).toEqual({
+		expect(normalizeVncTcpConfig({ host: "", port: "bad", enabled: "yes", sendTouchPoint: false })).toEqual({
 			host: "192.168.1.6",
 			port: 5901,
 			enabled: false,
 			tapDelayMs: 12,
+			sendTouchPoint: false,
 		});
 		expect(normalizeVncTcpConfig({ tapDelayMs: "300" }).tapDelayMs).toBe(100);
 		expect(normalizeVncTcpConfig({ tapDelayMs: "0" }).tapDelayMs).toBe(1);
@@ -123,5 +128,47 @@ describe("VncTcpService key output", () => {
 		} finally {
 			jest.useRealTimers();
 		}
+	});
+
+	it("sends keypress instead of pointer event when sendTouchPoint is false even if binding exists", () => {
+		const { service, socket } = createConnectedService();
+		service.configService.value.vncBindings = { y: { x: 100, y: 200 } };
+		service.configService.value.vncTcp.sendTouchPoint = false;
+
+		expect(service.sendKey("y", true)).toBe(true);
+		expect(socket.write).toHaveBeenCalledWith(createRfbKeyEvent(0x79, true));
+	});
+
+	it("sends pointer event when sendTouchPoint is true and binding exists", () => {
+		const { service, socket } = createConnectedService();
+		service.configService.value.vncBindings = { y: { x: 100, y: 200 } };
+		service.configService.value.vncTcp.sendTouchPoint = true;
+
+		expect(service.sendKey("y", true)).toBe(true);
+		const expectedPointerMsg = Buffer.from([5, 1, 0, 100, 0, 200]);
+		expect(socket.write).toHaveBeenCalledWith(expectedPointerMsg);
+	});
+});
+
+describe("VncTcpService port scanning", () => {
+	it("detects an open listening port on 127.0.0.1", async () => {
+		const server = net.createServer((socket) => {
+			socket.write("RFB 003.008\n");
+		});
+
+		await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+		const testPort = server.address().port;
+
+		try {
+			const detected = await scanOpenPort("127.0.0.1", { ports: [testPort, 59999], timeoutMs: 500 });
+			expect(detected).toBe(testPort);
+		} finally {
+			await new Promise((resolve) => server.close(resolve));
+		}
+	});
+
+	it("returns null if no ports are open", async () => {
+		const detected = await scanOpenPort("127.0.0.1", { ports: [59998, 59999], timeoutMs: 150 });
+		expect(detected).toBeNull();
 	});
 });

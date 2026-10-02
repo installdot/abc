@@ -42,6 +42,7 @@ export class ConfigService {
 				port: 5901,
 				enabled: false,
 				tapDelayMs: 12,
+				sendTouchPoint: true,
 			},
 			vncBindings: {},
 			appTheme: "dark",

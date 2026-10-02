@@ -7,8 +7,9 @@ const keyboard = {
 	}),
 };
 
-jest.unstable_mockModule("keysender", () => ({
-	Hardware: jest.fn(() => ({ keyboard })),
+jest.unstable_mockModule("../src/main/services/keysenderAdapter.js", () => ({
+	getHardware: jest.fn(() => ({ keyboard })),
+	default: jest.fn(() => ({ keyboard })),
 }));
 
 const { AutoPlayService: StrictAutoPlayService } = await import("../src/main/services/autoPlayServiceStrict.js");

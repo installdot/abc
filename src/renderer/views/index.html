@@ -162,6 +162,100 @@
             box-sizing: border-box;
         }
 
+        .tcp-field-label-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .tcp-scan-btn {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--hover-color, #3b82f6);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 7px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .tcp-scan-btn:hover {
+            background: var(--hover-color, #3b82f6);
+            color: #fff;
+            border-color: var(--hover-color, #3b82f6);
+        }
+
+        .tcp-scan-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .tcp-switch-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            margin-bottom: 12px;
+            font-size: 13px;
+        }
+
+        .tcp-switch-row .tcp-switch-text {
+            color: var(--font-color);
+            font-weight: 600;
+        }
+
+        .tcp-switch-toggle {
+            display: flex;
+            align-items: center;
+        }
+
+        .tcp-switch-toggle .switch {
+            display: none;
+        }
+
+        .tcp-switch-toggle .switch + label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+            gap: 8px;
+            position: relative;
+        }
+
+        .tcp-switch-toggle .switch + label::before {
+            content: "";
+            display: inline-block;
+            width: 34px;
+            height: 18px;
+            background-color: rgba(255, 255, 255, 0.16);
+            border-radius: 20px;
+            position: relative;
+            transition: background-color 0.2s;
+        }
+
+        .tcp-switch-toggle .switch + label::after {
+            content: "";
+            position: absolute;
+            left: 2px;
+            width: 14px;
+            height: 14px;
+            background-color: #fff;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+
+        .tcp-switch-toggle .switch:checked + label::before {
+            background-color: #16a34a;
+        }
+
+        .tcp-switch-toggle .switch:checked + label::after {
+            transform: translateX(16px);
+        }
+
         .binding-panel {
             display: flex;
             flex-direction: column;
@@ -383,14 +477,26 @@
                 IP
                 <input id="tcp-host" type="text" value="192.168.1.6" autocomplete="off" spellcheck="false">
             </label>
-            <label class="tcp-field" for="tcp-port">
-                Port
+            <div class="tcp-field">
+                <div class="tcp-field-label-row">
+                    <label for="tcp-port">Port</label>
+                    <button type="button" class="tcp-scan-btn" id="tcp-scan-port" title="Auto scan detect port">Scan</button>
+                </div>
                 <input id="tcp-port" type="number" min="1" max="65535" value="5901">
-            </label>
+            </div>
             <label class="tcp-field" for="tcp-tap-delay">
                 Tap delay (ms)
                 <input id="tcp-tap-delay" type="number" min="1" max="100" step="1" value="12">
             </label>
+        </div>
+        <div class="tcp-switch-row">
+            <span class="tcp-switch-text">Send mode:</span>
+            <div class="tcp-switch-toggle">
+                <input class="switch" type="checkbox" id="tcp-mode-switch" checked>
+                <label for="tcp-mode-switch">
+                    <span class="switch-x-text" id="tcp-mode-label">Touch Point</span>
+                </label>
+            </div>
         </div>
         <div class="tcp-actions">
             <button class="btn tcp-action" id="tcp-start">

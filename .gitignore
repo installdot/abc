@@ -130,3 +130,5 @@ dist
 
 config/
 data/
+SkyAutoPiano-win32-*/
+omp.exe

@@ -73,12 +73,44 @@ const SPECIAL_KEYSYM = new Map([
 	["f18", 0xffcf],
 	["f19", 0xffd0],
 	["f20", 0xffd1],
+	["numpad0", 0xffb0],
+	["numpad1", 0xffb1],
+	["numpad2", 0xffb2],
+	["numpad3", 0xffb3],
+	["numpad4", 0xffb4],
+	["numpad5", 0xffb5],
+	["numpad6", 0xffb6],
+	["numpad7", 0xffb7],
+	["numpad8", 0xffb8],
+	["numpad9", 0xffb9],
+	["num0", 0xffb0],
+	["num1", 0xffb1],
+	["num2", 0xffb2],
+	["num3", 0xffb3],
+	["num4", 0xffb4],
+	["num5", 0xffb5],
+	["num6", 0xffb6],
+	["num7", 0xffb7],
+	["num8", 0xffb8],
+	["num9", 0xffb9],
+	["num+", 0xffab],
+	["num-", 0xffad],
+	["num*", 0xffaa],
+	["num/", 0xffaf],
+	["numadd", 0xffab],
+	["numsub", 0xffad],
+	["nummult", 0xffaa],
+	["numdiv", 0xffaf],
+	["numdecimal", 0xffae],
+	["numperiod", 0xffae],
+	["numenter", 0xff8d],
 ]);
 
 export function normalizeVncTcpConfig(input = {}) {
 	const host = String(input.host ?? DEFAULT_HOST).trim() || DEFAULT_HOST;
 	const port = Number(input.port ?? DEFAULT_PORT);
 	const tapDelayMs = Number(input.tapDelayMs ?? DEFAULT_TAP_DELAY_MS);
+	const sendTouchPoint = input.sendTouchPoint !== false;
 
 	return {
 		host,
@@ -87,7 +119,48 @@ export function normalizeVncTcpConfig(input = {}) {
 		tapDelayMs: Number.isFinite(tapDelayMs)
 			? Math.min(MAX_TAP_DELAY_MS, Math.max(MIN_TAP_DELAY_MS, Math.round(tapDelayMs)))
 			: DEFAULT_TAP_DELAY_MS,
+		sendTouchPoint,
 	};
+}
+
+export async function scanOpenPort(host = DEFAULT_HOST, { ports = null, timeoutMs = 400 } = {}) {
+	const candidatePorts = Array.isArray(ports) && ports.length > 0
+		? ports
+		: [5900, 5901, 5902, 5903, 5904, 5905, 5906, 5907, 5908, 5909, 5910, 5911, 5912, 5913, 5914, 5915];
+
+	const checkPort = (port) =>
+		new Promise((resolve) => {
+			const socket = new net.Socket();
+			let settled = false;
+			const finish = (isOpen, isRfb = false) => {
+				if (settled) return;
+				settled = true;
+				socket.removeAllListeners();
+				socket.destroy();
+				resolve({ port, isOpen, isRfb });
+			};
+			socket.setTimeout(timeoutMs);
+			socket.once("connect", () => {
+				socket.once("data", (data) => {
+					const text = data.toString("ascii");
+					finish(true, text.startsWith("RFB"));
+				});
+				setTimeout(() => finish(true, false), 120);
+			});
+			socket.once("timeout", () => finish(false));
+			socket.once("error", () => finish(false));
+			try {
+				socket.connect(port, host);
+			} catch {
+				finish(false);
+			}
+		});
+
+	const results = await Promise.all(candidatePorts.map(checkPort));
+	const rfbMatch = results.find((r) => r.isOpen && r.isRfb);
+	if (rfbMatch) return rfbMatch.port;
+	const openMatch = results.find((r) => r.isOpen);
+	return openMatch ? openMatch.port : null;
 }
 
 export function keyToKeysym(key) {
@@ -141,6 +214,7 @@ export class VncTcpService extends EventEmitter {
 			host: this.config.host,
 			port: this.config.port,
 			tapDelayMs: this.config.tapDelayMs,
+			sendTouchPoint: this.config.sendTouchPoint,
 			desktopName: "",
 			width: 0,
 			height: 0,
@@ -166,6 +240,7 @@ export class VncTcpService extends EventEmitter {
 			...this.state,
 			enabled: this.config.enabled,
 			tapDelayMs: this.config.tapDelayMs,
+			sendTouchPoint: this.config.sendTouchPoint,
 		};
 	}
 
@@ -178,6 +253,7 @@ export class VncTcpService extends EventEmitter {
 
 		const statePatch = {
 			tapDelayMs: next.tapDelayMs,
+			sendTouchPoint: next.sendTouchPoint,
 		};
 
 		if (!this.isConnected) {
@@ -188,6 +264,17 @@ export class VncTcpService extends EventEmitter {
 		this.#setState(statePatch);
 		return this.getState();
 	}
+	async scanPort(host = this.config.host, options = {}) {
+		const targetHost = String(host || this.config.host).trim() || DEFAULT_HOST;
+		const detectedPort = await scanOpenPort(targetHost, options);
+		if (detectedPort) {
+			this.#log(`Detected open port: ${detectedPort} on ${targetHost}`, "info");
+			return { success: true, port: detectedPort, host: targetHost };
+		}
+		this.#log(`No open ports detected on ${targetHost}`, "warning");
+		return { success: false, port: null, host: targetHost };
+	}
+
 
 	async connect(input = {}) {
 		const next = normalizeVncTcpConfig({
@@ -561,13 +648,34 @@ decoded.copy(fullImage, dstStart, srcStart, srcStart + w * 4);
 	}
 
 	#getKeyBinding(key) {
-		return this.configService.value.vncBindings?.[key] ?? null;
+		if (!key) return null;
+		const bindings = this.configService.value.vncBindings ?? {};
+		if (bindings[key]) {
+			return bindings[key];
+		}
+
+		const pianoKeys = ["y", "u", "i", "o", "p", "h", "j", "k", "l", ";", "n", "m", ",", ".", "/"];
+		const customKeys = this.configService.value.keyboard?.keys;
+		if (Array.isArray(customKeys)) {
+			const idx = customKeys.findIndex((k) => String(k).toLowerCase() === String(key).toLowerCase());
+			if (idx >= 0 && bindings[pianoKeys[idx]]) {
+				return bindings[pianoKeys[idx]];
+			}
+			const pianoIdx = pianoKeys.indexOf(String(key).toLowerCase());
+			if (pianoIdx >= 0 && customKeys[pianoIdx] && bindings[customKeys[pianoIdx]]) {
+				return bindings[customKeys[pianoIdx]];
+			}
+		}
+
+		return null;
 	}
 
 	tapKey(key, durationMs) {
-		const binding = this.#getKeyBinding(key);
-		if (binding) {
-			return this.tapAt(binding.x, binding.y, durationMs);
+		if (this.config.sendTouchPoint !== false) {
+			const binding = this.#getKeyBinding(key);
+			if (binding) {
+				return this.tapAt(binding.x, binding.y, durationMs);
+			}
 		}
 
 		if (!this.config.enabled || !this.isConnected) {
@@ -584,9 +692,14 @@ decoded.copy(fullImage, dstStart, srcStart, srcStart + w * 4);
 	}
 
 	sendKey(key, down) {
-		const binding = this.#getKeyBinding(key);
-		if (binding && down) {
-			return this.tapAt(binding.x, binding.y, this.config.tapDelayMs);
+		if (this.config.sendTouchPoint !== false) {
+			const binding = this.#getKeyBinding(key);
+			if (binding && down) {
+				return this.tapAt(binding.x, binding.y, this.config.tapDelayMs);
+			}
+			if (binding && !down) {
+				return true;
+			}
 		}
 
 		if (!this.config.enabled || !this.isConnected) {
