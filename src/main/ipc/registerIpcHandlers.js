@@ -101,10 +101,12 @@ export function registerIpcHandlers({ windowController, configService, autoPlayS
 	ipcMain.handle("vnc-tcp-save-settings", (_, data) => {
 		return vncTcpService.updateSettings(data);
 	});
-	ipcMain.handle("vnc-tcp-scan-port", async (_, data) => {
-		return vncTcpService.scanPort(data?.host);
+	ipcMain.handle("vnc-tcp-scan-ip", async (_, data) => {
+		return vncTcpService.scanLocalIp(data?.port);
 	});
-
+	ipcMain.handle("vnc-tcp-scan-port", async (_, data) => {
+		return vncTcpService.scanLocalIp(data?.port);
+	});
 
 	ipcMain.handle("vnc-tcp-connect", async (_, data) => {
 		return vncTcpService.connect(data);

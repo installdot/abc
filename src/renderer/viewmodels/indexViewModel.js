@@ -78,7 +78,7 @@ marked.setOptions({
 const tcpPanel = document.getElementById("tcp-panel");
 const tcpPortInput = document.getElementById("tcp-port");
 const tcpTapDelayInput = document.getElementById("tcp-tap-delay");
-const tcpScanPortButton = document.getElementById("tcp-scan-port");
+const tcpScanIpButton = document.getElementById("tcp-scan-ip");
 const tcpModeSwitch = document.getElementById("tcp-mode-switch");
 const tcpModeLabel = document.getElementById("tcp-mode-label");
 const tcpDetectedIp = document.getElementById("tcp-detected-ip");
@@ -2978,43 +2978,41 @@ function setupVncTcpControls() {
 		});
 	});
 
-	tcpScanPortButton?.addEventListener("click", async () => {
-		tcpScanPortButton.disabled = true;
-		const originalText = tcpScanPortButton.textContent;
-		tcpScanPortButton.textContent = "...";
-		appendTcpLog("Auto scanning local network for iOS / VNC device...");
+	tcpScanIpButton?.addEventListener("click", async () => {
+		const port = Number(tcpPortInput?.value || 5901);
+		tcpScanIpButton.disabled = true;
+		const originalText = tcpScanIpButton.textContent;
+		tcpScanIpButton.textContent = "...";
+		appendTcpLog(`Scanning local IPv4 subnet (1..254) on port ${port}...`);
 
 		try {
-			const res = await ipcRenderer.invoke("vnc-tcp-scan-port", { host: vncTcpState?.host });
+			const res = await ipcRenderer.invoke("vnc-tcp-scan-ip", { port });
 			if (res?.success && res?.host) {
-				if (tcpPortInput && res.port) {
-					tcpPortInput.value = res.port;
-				}
 				if (tcpDetectedIp) {
 					tcpDetectedIp.textContent = `IP: ${res.host}`;
 				}
-				appendTcpLog(`Detected local device: ${res.host}:${res.port}`, "success");
+				appendTcpLog(`Detected device at ${res.host}:${port}`, "success");
 				notie.alert({
 					type: 1,
-					text: `Found device at ${res.host}:${res.port}`,
+					text: `Found device at ${res.host}:${port}`,
 				});
 				await saveVncTcpSettings(vncTcpState?.enabled === true);
 			} else {
-				appendTcpLog("No iOS / VNC device detected on local network", "error");
+				appendTcpLog(`No device detected on local IPv4 subnet for port ${port}`, "error");
 				notie.alert({
 					type: 2,
-					text: "No device detected. Make sure device is on same Wi-Fi or USB.",
+					text: `No device found on local subnet for port ${port}. Check Wi-Fi/USB.`,
 				});
 			}
 		} catch (err) {
-			appendTcpLog(`Port scan failed: ${err.message}`, "error");
+			appendTcpLog(`Scan failed: ${err.message}`, "error");
 			notie.alert({
 				type: 3,
 				text: `Scan error: ${err.message}`,
 			});
 		} finally {
-			tcpScanPortButton.disabled = false;
-			tcpScanPortButton.textContent = originalText;
+			tcpScanIpButton.disabled = false;
+			tcpScanIpButton.textContent = originalText;
 		}
 	});
 }

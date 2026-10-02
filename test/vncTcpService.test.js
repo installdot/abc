@@ -1,6 +1,6 @@
 import { jest } from "@jest/globals";
 import net from "node:net";
-import { createRfbKeyEvent, keyToKeysym, normalizeVncTcpConfig, scanLocalNetworkDevice, scanOpenPort, VncTcpService } from "../src/main/services/vncTcpService.js";
+import { createRfbKeyEvent, getLocalIPv4SubnetPrefix, keyToKeysym, normalizeVncTcpConfig, scanLocalSubnetIp, VncTcpService } from "../src/main/services/vncTcpService.js";
 
 function createConnectedService() {
 	const configService = {
@@ -150,8 +150,14 @@ describe("VncTcpService key output", () => {
 	});
 });
 
-describe("VncTcpService port scanning", () => {
-	it("detects an open listening port on 127.0.0.1", async () => {
+describe("VncTcpService local IP scanning", () => {
+	it("extracts a valid 3-octet subnet prefix from local IPv4 interfaces", () => {
+		const prefix = getLocalIPv4SubnetPrefix();
+		expect(typeof prefix).toBe("string");
+		expect(prefix.split(".")).toHaveLength(3);
+	});
+
+	it("detects local device IP on the specified port", async () => {
 		const server = net.createServer((socket) => {
 			socket.write("RFB 003.008\n");
 		});
@@ -160,31 +166,15 @@ describe("VncTcpService port scanning", () => {
 		const testPort = server.address().port;
 
 		try {
-			const detected = await scanOpenPort("127.0.0.1", { ports: [testPort, 59999], timeoutMs: 500 });
-			expect(detected).toBe(testPort);
+			const detected = await scanLocalSubnetIp(testPort, { currentHost: "127.0.0.1", timeoutMs: 300 });
+			expect(detected).toBe("127.0.0.1");
 		} finally {
 			await new Promise((resolve) => server.close(resolve));
 		}
 	});
 
-	it("returns null if no ports are open", async () => {
-		const detected = await scanOpenPort("127.0.0.1", { ports: [59998, 59999], timeoutMs: 150 });
+	it("returns null if no device is found on target port", async () => {
+		const detected = await scanLocalSubnetIp(59999, { currentHost: "127.0.0.1", timeoutMs: 100 });
 		expect(detected).toBeNull();
-	});
-
-	it("detects local device IP and port via scanLocalNetworkDevice", async () => {
-		const server = net.createServer((socket) => {
-			socket.write("RFB 003.008\n");
-		});
-
-		await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-		const testPort = server.address().port;
-
-		try {
-			const detected = await scanLocalNetworkDevice({ ports: [testPort], currentHost: "127.0.0.1", timeoutMs: 500 });
-			expect(detected).toEqual({ host: "127.0.0.1", port: testPort });
-		} finally {
-			await new Promise((resolve) => server.close(resolve));
-		}
 	});
 });
