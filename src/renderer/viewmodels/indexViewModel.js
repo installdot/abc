@@ -2817,9 +2817,6 @@ function renderVncTcpState(state = {}) {
 	if (tcpStopButton) {
 		tcpStopButton.disabled = status === "disconnected";
 	}
-	if (tcpHostInput) {
-		tcpHostInput.disabled = status === "connecting" || status === "connected";
-	}
 	if (tcpPortInput) {
 		tcpPortInput.disabled = status === "connecting" || status === "connected";
 	}
