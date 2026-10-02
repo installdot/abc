@@ -1,6 +1,6 @@
 import { jest } from "@jest/globals";
 import net from "node:net";
-import { createRfbKeyEvent, keyToKeysym, normalizeVncTcpConfig, scanOpenPort, VncTcpService } from "../src/main/services/vncTcpService.js";
+import { createRfbKeyEvent, keyToKeysym, normalizeVncTcpConfig, scanLocalNetworkDevice, scanOpenPort, VncTcpService } from "../src/main/services/vncTcpService.js";
 
 function createConnectedService() {
 	const configService = {
@@ -170,5 +170,21 @@ describe("VncTcpService port scanning", () => {
 	it("returns null if no ports are open", async () => {
 		const detected = await scanOpenPort("127.0.0.1", { ports: [59998, 59999], timeoutMs: 150 });
 		expect(detected).toBeNull();
+	});
+
+	it("detects local device IP and port via scanLocalNetworkDevice", async () => {
+		const server = net.createServer((socket) => {
+			socket.write("RFB 003.008\n");
+		});
+
+		await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+		const testPort = server.address().port;
+
+		try {
+			const detected = await scanLocalNetworkDevice({ ports: [testPort], currentHost: "127.0.0.1", timeoutMs: 500 });
+			expect(detected).toEqual({ host: "127.0.0.1", port: testPort });
+		} finally {
+			await new Promise((resolve) => server.close(resolve));
+		}
 	});
 });

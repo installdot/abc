@@ -1,4 +1,5 @@
 import net from "node:net";
+import os from "node:os";
 import { EventEmitter } from "node:events";
 
 const DEFAULT_HOST = "192.168.1.6";
@@ -162,6 +163,107 @@ export async function scanOpenPort(host = DEFAULT_HOST, { ports = null, timeoutM
 	const openMatch = results.find((r) => r.isOpen);
 	return openMatch ? openMatch.port : null;
 }
+export function getLocalSubnetIps() {
+	const ips = [];
+	const interfaces = os.networkInterfaces();
+	for (const name of Object.keys(interfaces)) {
+		for (const iface of interfaces[name] || []) {
+			if (iface.family === "IPv4" && !iface.internal) {
+				const parts = iface.address.split(".");
+				if (parts.length === 4) {
+					const prefix = `${parts[0]}.${parts[1]}.${parts[2]}`;
+					for (let i = 1; i <= 254; i++) {
+						const target = `${prefix}.${i}`;
+						if (target !== iface.address) {
+							ips.push(target);
+						}
+					}
+				}
+			}
+		}
+	}
+	return ips;
+}
+
+export function probeHostPort(host, port, timeoutMs = 280) {
+	return new Promise((resolve) => {
+		const socket = new net.Socket();
+		let settled = false;
+		const finish = (isOpen, isRfb = false) => {
+			if (settled) return;
+			settled = true;
+			socket.removeAllListeners();
+			socket.destroy();
+			resolve({ host, port, isOpen, isRfb });
+		};
+		socket.setTimeout(timeoutMs);
+		socket.once("connect", () => {
+			socket.once("data", (data) => {
+				const text = data.toString("ascii");
+				finish(true, text.startsWith("RFB"));
+			});
+			setTimeout(() => finish(true, false), 100);
+		});
+		socket.once("timeout", () => finish(false));
+		socket.once("error", () => finish(false));
+		try {
+			socket.connect(port, host);
+		} catch {
+			finish(false);
+		}
+	});
+}
+
+export async function scanLocalNetworkDevice({ ports = null, currentHost = null, timeoutMs = 280 } = {}) {
+	const candidatePorts = Array.isArray(ports) && ports.length > 0
+		? ports
+		: [5901, 5900, 5902, 5903];
+
+	const priorityHosts = ["127.0.0.1"];
+	if (currentHost && currentHost !== "127.0.0.1") {
+		priorityHosts.push(currentHost);
+	}
+
+	for (const host of priorityHosts) {
+		for (const port of candidatePorts) {
+			const res = await probeHostPort(host, port, 150);
+			if (res.isOpen) {
+				return { host: res.host, port: res.port };
+			}
+		}
+	}
+
+	const subnetIps = getLocalSubnetIps();
+	const primaryPort = candidatePorts[0] || 5901;
+	const chunkSize = 50;
+
+	for (let i = 0; i < subnetIps.length; i += chunkSize) {
+		const chunk = subnetIps.slice(i, i + chunkSize);
+		const results = await Promise.all(chunk.map((ip) => probeHostPort(ip, primaryPort, timeoutMs)));
+		const rfbMatch = results.find((r) => r.isOpen && r.isRfb);
+		if (rfbMatch) {
+			return { host: rfbMatch.host, port: rfbMatch.port };
+		}
+		const openMatch = results.find((r) => r.isOpen);
+		if (openMatch) {
+			return { host: openMatch.host, port: openMatch.port };
+		}
+	}
+
+	for (let p = 1; p < candidatePorts.length; p++) {
+		const port = candidatePorts[p];
+		for (let i = 0; i < subnetIps.length; i += chunkSize) {
+			const chunk = subnetIps.slice(i, i + chunkSize);
+			const results = await Promise.all(chunk.map((ip) => probeHostPort(ip, port, timeoutMs)));
+			const match = results.find((r) => r.isOpen);
+			if (match) {
+				return { host: match.host, port: match.port };
+			}
+		}
+	}
+
+	return null;
+}
 
 export function keyToKeysym(key) {
 	if (typeof key !== "string") {
@@ -265,14 +367,27 @@ export class VncTcpService extends EventEmitter {
 		return this.getState();
 	}
 	async scanPort(host = this.config.host, options = {}) {
+		const detected = await scanLocalNetworkDevice({
+			currentHost: host || this.config.host,
+			...options,
+		});
+
+		if (detected) {
+			this.updateSettings({ host: detected.host, port: detected.port });
+			this.#log(`Detected local device: ${detected.host}:${detected.port}`, "info");
+			return { success: true, host: detected.host, port: detected.port };
+		}
+
 		const targetHost = String(host || this.config.host).trim() || DEFAULT_HOST;
 		const detectedPort = await scanOpenPort(targetHost, options);
 		if (detectedPort) {
+			this.updateSettings({ host: targetHost, port: detectedPort });
 			this.#log(`Detected open port: ${detectedPort} on ${targetHost}`, "info");
-			return { success: true, port: detectedPort, host: targetHost };
+			return { success: true, host: targetHost, port: detectedPort };
 		}
-		this.#log(`No open ports detected on ${targetHost}`, "warning");
-		return { success: false, port: null, host: targetHost };
+
+		this.#log(`No iOS / VNC device detected on local network`, "warning");
+		return { success: false, host: targetHost, port: null };
 	}
 
 

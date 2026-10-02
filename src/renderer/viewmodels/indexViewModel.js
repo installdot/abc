@@ -76,14 +76,12 @@ marked.setOptions({
 
 
 const tcpPanel = document.getElementById("tcp-panel");
-const tcpHostInput = document.getElementById("tcp-host");
 const tcpPortInput = document.getElementById("tcp-port");
 const tcpTapDelayInput = document.getElementById("tcp-tap-delay");
 const tcpScanPortButton = document.getElementById("tcp-scan-port");
 const tcpModeSwitch = document.getElementById("tcp-mode-switch");
 const tcpModeLabel = document.getElementById("tcp-mode-label");
-const footerModeSwitch = document.getElementById("footer-mode-switch");
-const footerModeText = document.getElementById("footer-mode-text");
+const tcpDetectedIp = document.getElementById("tcp-detected-ip");
 const tcpStartButton = document.getElementById("tcp-start");
 const tcpStopButton = document.getElementById("tcp-stop");
 const tcpStatusBadge = document.getElementById("tcp-status");
@@ -2749,7 +2747,7 @@ function setTcpPanelVisible(isVisible) {
 }
 
 function getTcpSettingsFromForm() {
-	const rawHost = tcpHostInput?.value?.trim() || "192.168.1.6";
+	const rawHost = vncTcpState?.host || "192.168.1.6";
 	const rawPort = Number(tcpPortInput?.value || 5901);
 	const port = Number.isInteger(rawPort) && rawPort > 0 && rawPort <= 65535 ? rawPort : 5901;
 	const rawTapDelayMs = Number(tcpTapDelayInput?.value || vncTcpState?.tapDelayMs || 12);
@@ -2783,8 +2781,8 @@ function renderVncTcpState(state = {}) {
 		error: "Error",
 	}[status] || "Disconnected";
 
-	if (tcpHostInput && state.host && document.activeElement !== tcpHostInput) {
-		tcpHostInput.value = state.host;
+	if (tcpDetectedIp) {
+		tcpDetectedIp.textContent = state.host ? `IP: ${state.host}` : "IP: -";
 	}
 	if (tcpPortInput && state.port && document.activeElement !== tcpPortInput) {
 		tcpPortInput.value = state.port;
@@ -2792,15 +2790,11 @@ function renderVncTcpState(state = {}) {
 	if (tcpTapDelayInput && state.tapDelayMs && document.activeElement !== tcpTapDelayInput) {
 		tcpTapDelayInput.value = state.tapDelayMs;
 	}
-	if (typeof state.sendTouchPoint === "boolean") {
-		if (tcpModeSwitch) tcpModeSwitch.checked = state.sendTouchPoint;
-		if (footerModeSwitch) footerModeSwitch.checked = state.sendTouchPoint;
+	if (tcpModeSwitch && typeof state.sendTouchPoint === "boolean") {
+		tcpModeSwitch.checked = state.sendTouchPoint;
 	}
 	if (tcpModeLabel) {
 		tcpModeLabel.textContent = tcpModeSwitch?.checked ? "Touch Point" : "Key Press";
-	}
-	if (footerModeText) {
-		footerModeText.textContent = footerModeSwitch?.checked ? "Touch: " : "Key: ";
 	}
 	if (tcpStatusBadge) {
 		tcpStatusBadge.className = `tcp-status ${status}`;
@@ -2959,7 +2953,7 @@ function setupVncTcpControls() {
 		}
 	});
 
-	for (const input of [tcpHostInput, tcpPortInput, tcpTapDelayInput]) {
+	for (const input of [tcpPortInput, tcpTapDelayInput]) {
 		input?.addEventListener("change", () => {
 			saveVncTcpSettings(vncTcpState?.enabled === true).catch((error) => {
 				renderVncTcpState({
@@ -2971,12 +2965,9 @@ function setupVncTcpControls() {
 		});
 	}
 
-	const onModeToggle = (sourceCheckbox) => {
-		const isTouch = sourceCheckbox.checked;
-		if (tcpModeSwitch && tcpModeSwitch !== sourceCheckbox) tcpModeSwitch.checked = isTouch;
-		if (footerModeSwitch && footerModeSwitch !== sourceCheckbox) footerModeSwitch.checked = isTouch;
+	tcpModeSwitch?.addEventListener("change", () => {
+		const isTouch = tcpModeSwitch.checked;
 		if (tcpModeLabel) tcpModeLabel.textContent = isTouch ? "Touch Point" : "Key Press";
-		if (footerModeText) footerModeText.textContent = isTouch ? "Touch: " : "Key: ";
 		appendTcpLog(`Output mode changed to ${isTouch ? "Touch Point" : "Key Press"}`);
 		saveVncTcpSettings(vncTcpState?.enabled === true).catch((error) => {
 			renderVncTcpState({
@@ -2985,35 +2976,34 @@ function setupVncTcpControls() {
 				message: error.message,
 			});
 		});
-	};
-
-	tcpModeSwitch?.addEventListener("change", () => onModeToggle(tcpModeSwitch));
-	footerModeSwitch?.addEventListener("change", () => onModeToggle(footerModeSwitch));
+	});
 
 	tcpScanPortButton?.addEventListener("click", async () => {
-		const host = tcpHostInput?.value?.trim() || "192.168.1.6";
 		tcpScanPortButton.disabled = true;
 		const originalText = tcpScanPortButton.textContent;
 		tcpScanPortButton.textContent = "...";
-		appendTcpLog(`Scanning for open ports on ${host}...`);
+		appendTcpLog("Auto scanning local network for iOS / VNC device...");
 
 		try {
-			const res = await ipcRenderer.invoke("vnc-tcp-scan-port", { host });
-			if (res?.success && res?.port) {
-				if (tcpPortInput) {
+			const res = await ipcRenderer.invoke("vnc-tcp-scan-port", { host: vncTcpState?.host });
+			if (res?.success && res?.host) {
+				if (tcpPortInput && res.port) {
 					tcpPortInput.value = res.port;
 				}
-				appendTcpLog(`Detected open port ${res.port} on ${host}`, "success");
+				if (tcpDetectedIp) {
+					tcpDetectedIp.textContent = `IP: ${res.host}`;
+				}
+				appendTcpLog(`Detected local device: ${res.host}:${res.port}`, "success");
 				notie.alert({
 					type: 1,
-					text: `Detected open port: ${res.port}`,
+					text: `Found device at ${res.host}:${res.port}`,
 				});
 				await saveVncTcpSettings(vncTcpState?.enabled === true);
 			} else {
-				appendTcpLog(`No open ports found on ${host}`, "error");
+				appendTcpLog("No iOS / VNC device detected on local network", "error");
 				notie.alert({
 					type: 2,
-					text: `No open port detected on ${host}. Check device connection.`,
+					text: "No device detected. Make sure device is on same Wi-Fi or USB.",
 				});
 			}
 		} catch (err) {
