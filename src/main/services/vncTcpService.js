@@ -244,6 +244,8 @@ export class VncTcpService extends EventEmitter {
 		this.pendingReads = [];
 		this.tapTimers = new Set();
 		this.tapQueues = new Map();
+		this.pointerTapQueue = [];
+		this.pointerTapRunning = false;
 		this.tapGeneration = 0;
 		this.activeKeysyms = new Set();
 		this.state = {
@@ -471,33 +473,6 @@ export class VncTcpService extends EventEmitter {
 		this.activeKeysyms.clear();
 	}
 
-	sendKey(key, down) {
-		if (!this.config.enabled || !this.isConnected) {
-			return false;
-		}
-
-		const keysym = keyToKeysym(key);
-		if (keysym === null) {
-			return false;
-		}
-
-		const isDown = down === true;
-		return this.#writeKeyEvent(keysym, isDown);
-	}
-
-	tapKey(key, durationMs) {
-		if (!this.config.enabled || !this.isConnected) {
-			return false;
-		}
-
-		const keysym = keyToKeysym(key);
-		if (keysym === null) {
-			return false;
-		}
-
-		this.#queueKeyTap(keysym, durationMs);
-		return true;
-	}
 
 	/**
 	 * Send a raw UTF-8 word packet to the TCP connection. This is intended
@@ -837,6 +812,8 @@ decoded.copy(fullImage, dstStart, srcStart, srcStart + w * 4);
 		}
 		this.tapTimers.clear();
 		this.tapQueues.clear();
+		this.pointerTapQueue.length = 0;
+		this.pointerTapRunning = false;
 	}
 
 	#parsePixelFormat(buffer) {
@@ -893,11 +870,40 @@ decoded.copy(fullImage, dstStart, srcStart, srcStart + w * 4);
 			? Math.max(1, Math.round(durationMs))
 			: this.config.tapDelayMs;
 
-		this.#writePointerEvent(1, x, y);
-		this.#setTapTimer(() => {
-			this.#writePointerEvent(0, x, y);
-		}, wait);
+		this.pointerTapQueue.push({ x, y, wait });
+		this.#drainPointerTapQueue();
 		return true;
+	}
+
+	#drainPointerTapQueue() {
+		if (this.pointerTapRunning) {
+			return;
+		}
+
+		const generation = this.tapGeneration;
+		this.pointerTapRunning = true;
+		const runNext = () => {
+			if (generation !== this.tapGeneration || this.pointerTapQueue.length === 0) {
+				this.pointerTapRunning = false;
+				return;
+			}
+			if (!this.#canWriteTap(generation)) {
+				this.pointerTapQueue.length = 0;
+				this.pointerTapRunning = false;
+				return;
+			}
+
+			const tap = this.pointerTapQueue.shift();
+			this.#writePointerEvent(1, tap.x, tap.y);
+			this.#setTapTimer(() => {
+				if (this.#canWriteTap(generation)) {
+					this.#writePointerEvent(0, tap.x, tap.y);
+				}
+				runNext();
+			}, tap.wait);
+		};
+
+		runNext();
 	}
 
 	#connectSocket(socket, host, port) {

@@ -148,6 +148,42 @@ describe("VncTcpService key output", () => {
 		const expectedPointerMsg = Buffer.from([5, 1, 0, 100, 0, 200]);
 		expect(socket.write).toHaveBeenCalledWith(expectedPointerMsg);
 	});
+
+	it("serializes touch-point taps so overloaded chords do not turn into drags", () => {
+		jest.useFakeTimers();
+
+		try {
+			const { service, socket } = createConnectedService();
+			service.configService.value.vncBindings = {
+				y: { x: 100, y: 200 },
+				u: { x: 300, y: 400 },
+			};
+
+			expect(service.tapKey("y", 12)).toBe(true);
+			expect(service.tapKey("u", 12)).toBe(true);
+
+			expect(socket.write.mock.calls.map(([message]) => [...message])).toEqual([
+				[5, 1, 0, 100, 0, 200],
+			]);
+
+			jest.advanceTimersByTime(12);
+			expect(socket.write.mock.calls.map(([message]) => [...message])).toEqual([
+				[5, 1, 0, 100, 0, 200],
+				[5, 0, 0, 100, 0, 200],
+				[5, 1, 1, 44, 1, 144],
+			]);
+
+			jest.advanceTimersByTime(12);
+			expect(socket.write.mock.calls.map(([message]) => [...message])).toEqual([
+				[5, 1, 0, 100, 0, 200],
+				[5, 0, 0, 100, 0, 200],
+				[5, 1, 1, 44, 1, 144],
+				[5, 0, 1, 44, 1, 144],
+			]);
+		} finally {
+			jest.useRealTimers();
+		}
+	});
 });
 
 describe("VncTcpService local IP scanning", () => {
